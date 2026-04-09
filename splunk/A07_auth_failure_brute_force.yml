@@ -1,0 +1,55 @@
+title: A07 - Authentication Failure and Brute Force Detection
+id: a07-auth-failure-brute-force
+status: production
+description: Detects brute force attacks, credential stuffing and authentication bypass attempts against login endpoints
+author: aqsin1337
+date: 2026/04/07
+modified: 2026/04/07
+references:
+  - https://owasp.org/Top10/A07_2021-Identification_and_Authentication_Failures/
+tags:
+  - attack.credential_access
+  - attack.brute_force
+  - owasp.a07
+severity: high
+platform: splunk
+
+splunk_query: |
+  source="http:web_logs"
+  | eval attack_type="A07-Auth Failure"
+  | where match(request_uri, "(?i)(\/login|\/signin|\/wp-login\.php|\/admin\/login|\/user\/login|\/auth|\/session|\/oauth|\/token|\/api\/auth|\/api\/login)")
+  | where status_code IN ("401", "403", "429")
+  | bucket _time span=5m
+  | stats count as failed_attempts,
+          values(request_uri) as targeted_endpoints,
+          values(status_code) as response_codes,
+          dc(request_uri) as unique_endpoints
+          by _time, client_ip, attack_type
+  | eval severity=case(
+      failed_attempts >= 50, "CRITICAL",
+      failed_attempts >= 20, "HIGH",
+      failed_attempts >= 10, "MEDIUM",
+      true(), "LOW"
+  )
+  | where failed_attempts >= 10
+  | eval risk_score=case(
+      severity="CRITICAL", failed_attempts*15,
+      severity="HIGH", failed_attempts*10,
+      severity="MEDIUM", failed_attempts*5,
+      true(), failed_attempts*2
+  )
+  | eval _time=strftime(_time, "%Y-%m-%d %H:%M:%S")
+  | sort -risk_score
+  | table _time, client_ip, attack_type, severity, failed_attempts, risk_score, targeted_endpoints
+
+false_positives:
+  - Legitimate users forgetting passwords
+  - Password reset flows
+  - Automated testing tools
+
+response:
+  - Block source IP immediately
+  - Force password reset for targeted accounts
+  - Enable MFA for affected endpoints
+  - Review account lockout policies
+  - Check for successful logins from same IP
