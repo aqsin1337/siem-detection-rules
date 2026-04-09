@@ -1,0 +1,47 @@
+title: A01 - Broken Access Control Detection
+id: a01-broken-access-control
+status: production
+description: Detects unauthorized access attempts to restricted paths including admin panels, config files, and sensitive directories
+author: aqsin1337
+date: 2026/04/07
+modified: 2026/04/07
+references:
+  - https://owasp.org/Top10/A01_2021-Broken_Access_Control/
+tags:
+  - attack.initial_access
+  - attack.privilege_escalation
+  - owasp.a01
+severity: high
+platform: splunk
+
+splunk_query: |
+  source="http:web_logs"
+  | eval attack_type="A01-Broken Access Control"
+  | where match(request_uri, "(?i)(\/admin|\/config|\/backup|\/\.env|\/\.git|\/etc\/passwd|\/proc\/self|\/root|\/phpmyadmin|\/wp-admin|\/wp-config\.php|\/database\.yml|\/settings\.py)")
+  AND status_code IN ("200", "201", "202", "301", "302")
+  | eval severity=case(
+      status_code="200", "CRITICAL",
+      status_code IN ("301","302"), "HIGH",
+      true(), "MEDIUM"
+  )
+  | stats count as attempt_count, 
+          values(request_uri) as targeted_paths,
+          values(status_code) as response_codes
+          by client_ip, attack_type, severity
+  | where attempt_count > 3
+  | eval risk_score=case(
+      severity="CRITICAL", attempt_count*10,
+      severity="HIGH", attempt_count*7,
+      true(), attempt_count*5
+  )
+  | sort -risk_score
+  | table client_ip, attack_type, severity, attempt_count, risk_score, targeted_paths, response_codes
+
+false_positives:
+  - Legitimate admin access from known IPs
+  - Security scanners from authorized sources
+
+response:
+  - Block source IP immediately
+  - Review access logs for data exfiltration
+  - Check if any sensitive files were accessed successfully
