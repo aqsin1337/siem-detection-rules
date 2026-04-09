@@ -1,0 +1,24 @@
+title: A03 - SQL Injection Detection
+id: a03-sql-injection
+status: production
+description: Detects SQL injection attempts including UNION-based, blind, time-based and error-based injection techniques
+author: aqsin1337
+date: 2026/04/07
+modified: 2026/04/07
+references:
+  - https://owasp.org/Top10/A03_2021-Injection/
+tags:
+  - attack.initial_access
+  - attack.execution
+  - owasp.a03
+severity: critical
+platform: splunk
+
+splunk_query: |
+  source="http:web_logs"
+  | eval attack_type="A03-SQL Injection"
+  | where match(request_uri, "(?i)(union(\s|\+)select|select(\s|\+).*from|insert(\s|\+)into|drop(\s|\+)table|delete(\s|\+)from|update(\s|\+).*set|exec(\s|\+)|xp_cmdshell|information_schema|sys\.tables|sys\.columns|SLEEP\(|BENCHMARK\(|WAITFOR(\s|\+)DELAY|LOAD_FILE\(|INTO(\s|\+)OUTFILE|--(\s|$)|;--|%27|%22|1=1|' or '|\" or \"|OR 1=1|AND 1=1|' AND '|CHAR\(|CONCAT\(|GROUP_CONCAT\()")
+  | eval injection_type=case(
+      match(request_uri, "(?i)(SLEEP\(|BENCHMARK\(|WAITFOR)"), "Time-Based Blind SQLi",
+      match(request_uri, "(?i)(union(\s|\+)select)"), "UNION-Based SQLi",
+      match(request_uri, "(?i)(1=1|OR 1
