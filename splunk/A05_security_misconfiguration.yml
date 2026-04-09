@@ -15,7 +15,7 @@ severity: high
 platform: splunk
 
 splunk_query: |
-  source="http:web_loglari"
+  source="http:web_logs"
   | eval attack_type="A05-Security Misconfiguration"
   | where match(request_uri, "(?i)(\/\.env|\/\.git\/config|\/\.svn\/|\/\.htaccess|\/web\.config|\/phpinfo\.php|\/server-status|\/server-info|\/elmah\.axd|\/trace\.axd|\/wp-config\.php|\/config\.php|\/database\.yml|\/settings\.py|\/application\.properties|\/appsettings\.json|\/\.DS_Store|\/crossdomain\.xml|\/clientaccesspolicy\.xml|\/swagger\/|\/api-docs|\/actuator\/|\/jolokia\/|\/jmx-console|\/admin-console|\/manager\/html)")
   | eval probe_type=case(
