@@ -15,10 +15,40 @@ severity: critical
 platform: splunk
 
 splunk_query: |
-  source="http:web_logs"
+  source="http:web_loglari"
   | eval attack_type="A03-SQL Injection"
   | where match(request_uri, "(?i)(union(\s|\+)select|select(\s|\+).*from|insert(\s|\+)into|drop(\s|\+)table|delete(\s|\+)from|update(\s|\+).*set|exec(\s|\+)|xp_cmdshell|information_schema|sys\.tables|sys\.columns|SLEEP\(|BENCHMARK\(|WAITFOR(\s|\+)DELAY|LOAD_FILE\(|INTO(\s|\+)OUTFILE|--(\s|$)|;--|%27|%22|1=1|' or '|\" or \"|OR 1=1|AND 1=1|' AND '|CHAR\(|CONCAT\(|GROUP_CONCAT\()")
   | eval injection_type=case(
       match(request_uri, "(?i)(SLEEP\(|BENCHMARK\(|WAITFOR)"), "Time-Based Blind SQLi",
       match(request_uri, "(?i)(union(\s|\+)select)"), "UNION-Based SQLi",
-      match(request_uri, "(?i)(1=1|OR 1
+      match(request_uri, "(?i)(1=1|OR 1|AND 1)"), "Boolean-Based SQLi",
+      match(request_uri, "(?i)(xp_cmdshell|INTO OUTFILE|LOAD_FILE)"), "Out-of-Band SQLi",
+      true(), "Generic SQLi"
+  )
+  | eval severity=case(
+      injection_type="Out-of-Band SQLi", "CRITICAL",
+      injection_type="UNION-Based SQLi", "HIGH",
+      true(), "MEDIUM"
+  )
+  | stats count as attempt_count,
+          values(request_uri) as payloads,
+          values(injection_type) as injection_types,
+          values(status_code) as response_codes
+          by client_ip, attack_type, severity
+  | eval risk_score=case(
+      severity="CRITICAL", attempt_count*15,
+      severity="HIGH", attempt_count*10,
+      true(), attempt_count*5
+  )
+  | sort -risk_score
+  | table client_ip, attack_type, severity, injection_type, attempt_count, risk_score, payloads
+
+false_positives:
+  - Security scanners from authorized sources
+  - Penetration testing activities
+
+response:
+  - Block source IP immediately
+  - Check database logs for successful injection
+  - Review WAF rules
+  - Patch vulnerable endpoints
