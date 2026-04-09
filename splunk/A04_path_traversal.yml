@@ -1,0 +1,55 @@
+title: A04 - Path Traversal Detection
+id: a04-path-traversal
+status: production
+description: Detects directory traversal and path traversal attempts to access files outside web root including encoded variants
+author: aqsin1337
+date: 2026/04/07
+modified: 2026/04/07
+references:
+  - https://owasp.org/Top10/A04_2021-Insecure_Design/
+tags:
+  - attack.discovery
+  - attack.credential_access
+  - owasp.a04
+severity: high
+platform: splunk
+
+splunk_query: |
+  source="http:web_loglari"
+  | eval attack_type="A04-Path Traversal"
+  | where match(request_uri, "(?i)(\.\.\/|\.\.\\|%2e%2e%2f|%2e%2e\/|%252e%252e|\.\.%2f|%c0%ae|%c1%9c|\/etc\/passwd|\/etc\/shadow|\/etc\/hosts|\/proc\/self\/environ|\/proc\/self\/cmdline|\/var\/log\/|\/usr\/local\/|\/root\/\.ssh|\/home\/.*\/\.ssh|\/windows\/system32|\/winnt\/system32)")
+  | eval traversal_type=case(
+      match(request_uri, "(?i)(\/etc\/passwd|\/etc\/shadow|\/root\/\.ssh)"), "Credential File Access",
+      match(request_uri, "(?i)(\/proc\/self)"), "Process Info Leak",
+      match(request_uri, "(?i)(%2e%2e|%252e|%c0%ae)"), "Encoded Traversal",
+      match(request_uri, "(?i)(\/windows\/system32|\/winnt)"), "Windows Path Traversal",
+      true(), "Generic Path Traversal"
+  )
+  | eval severity=case(
+      traversal_type="Credential File Access", "CRITICAL",
+      traversal_type="Process Info Leak", "HIGH",
+      traversal_type="Encoded Traversal", "HIGH",
+      true(), "MEDIUM"
+  )
+  | stats count as attempt_count,
+          values(request_uri) as payloads,
+          values(traversal_type) as traversal_types,
+          values(status_code) as response_codes
+          by client_ip, attack_type, severity
+  | eval risk_score=case(
+      severity="CRITICAL", attempt_count*15,
+      severity="HIGH", attempt_count*10,
+      true(), attempt_count*5
+  )
+  | sort -risk_score
+  | table client_ip, attack_type, severity, traversal_type, attempt_count, risk_score, payloads
+
+false_positives:
+  - Legitimate file access from application
+  - Security scanners from authorized sources
+
+response:
+  - Block source IP immediately
+  - Check if sensitive files were accessed successfully
+  - Review application input validation
+  - Implement chroot jail or similar containment
