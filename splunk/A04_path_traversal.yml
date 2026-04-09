@@ -15,7 +15,7 @@ severity: high
 platform: splunk
 
 splunk_query: |
-  source="http:web_loglari"
+  source="http:web_logs"
   | eval attack_type="A04-Path Traversal"
   | where match(request_uri, "(?i)(\.\.\/|\.\.\\|%2e%2e%2f|%2e%2e\/|%252e%252e|\.\.%2f|%c0%ae|%c1%9c|\/etc\/passwd|\/etc\/shadow|\/etc\/hosts|\/proc\/self\/environ|\/proc\/self\/cmdline|\/var\/log\/|\/usr\/local\/|\/root\/\.ssh|\/home\/.*\/\.ssh|\/windows\/system32|\/winnt\/system32)")
   | eval traversal_type=case(
