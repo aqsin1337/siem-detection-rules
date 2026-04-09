@@ -1,0 +1,60 @@
+title: A14 - XML External Entity (XXE) Injection Detection
+id: a14-xxe-injection
+status: production
+description: Detects XXE injection attempts targeting XML parsers to access internal files, perform SSRF or cause denial of service
+author: aqsin1337
+date: 2026/04/07
+modified: 2026/04/07
+references:
+  - https://owasp.org/www-community/vulnerabilities/XML_External_Entity_(XXE)_Processing
+  - https://attack.mitre.org/techniques/T1190/
+tags:
+  - attack.initial_access
+  - attack.discovery
+  - mitre.t1190
+severity: critical
+platform: splunk
+
+splunk_query: |
+  source="http:web_logs"
+  | eval attack_type="A14-XXE Injection"
+  | where match(request_uri, "(?i)(%3c%21DOCTYPE|%3c%21ENTITY|<!DOCTYPE|<!ENTITY|SYSTEM\s+\"|PUBLIC\s+\"|file:\/\/|expect:\/\/|php:\/\/|zip:\/\/|data:\/\/|phar:\/\/|%26xxe%3b|&xxe;|%26exfil%3b|CDATA\[|%3croot%3e|<root>.*<\/root>|xml version|%3c%3fxml)")
+  | eval xxe_type=case(
+      match(request_uri, "(?i)(file:\/\/|SYSTEM\s+\")"), "File Disclosure XXE",
+      match(request_uri, "(?i)(expect:\/\/|php:\/\/)"), "RCE via XXE",
+      match(request_uri, "(?i)(http:\/\/|https:\/\/)"), "SSRF via XXE",
+      match(request_uri, "(?i)(CDATA\[|%3croot%3e)"), "Blind XXE",
+      match(request_uri, "(?i)(<!DOCTYPE|%3c%21DOCTYPE)"), "DTD Injection",
+      true(), "Generic XXE"
+  )
+  | eval severity=case(
+      xxe_type="RCE via XXE", "CRITICAL",
+      xxe_type="File Disclosure XXE", "CRITICAL",
+      xxe_type="SSRF via XXE", "HIGH",
+      xxe_type="Blind XXE", "HIGH",
+      true(), "MEDIUM"
+  )
+  | stats count as attempt_count,
+          values(request_uri) as payloads,
+          values(xxe_type) as xxe_types,
+          values(status_code) as response_codes
+          by client_ip, attack_type, severity
+  | eval risk_score=case(
+      severity="CRITICAL", attempt_count*20,
+      severity="HIGH", attempt_count*10,
+      true(), attempt_count*5
+  )
+  | sort -risk_score
+  | table client_ip, attack_type, severity, xxe_type, attempt_count, risk_score, payloads
+
+false_positives:
+  - Legitimate XML API requests
+  - SOAP web services with complex XML
+  - Authorized security scanners
+
+response:
+  - Block source IP immediately
+  - Disable XML external entity processing
+  - Review XML parser configurations
+  - Check for successful file disclosure
+  - Implement XML input validation
