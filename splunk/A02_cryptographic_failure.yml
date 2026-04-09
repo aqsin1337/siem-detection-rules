@@ -1,0 +1,46 @@
+title: A02 - Cryptographic Failure Detection
+id: a02-cryptographic-failure
+status: production
+description: Detects sensitive data exposure through URLs including passwords, tokens, API keys and other credentials transmitted in plaintext
+author: aqsin1337
+date: 2026/04/07
+modified: 2026/04/07
+references:
+  - https://owasp.org/Top10/A02_2021-Cryptographic_Failures/
+tags:
+  - attack.credential_access
+  - attack.collection
+  - owasp.a02
+severity: critical
+platform: splunk
+
+splunk_query: |
+  source="http:web_logs"
+  | eval attack_type="A02-Cryptographic Failure"
+  | where match(request_uri, "(?i)(password=|passwd=|pwd=|secret=|token=|api_key=|apikey=|auth=|credential=|private_key=|access_key=|client_secret=|session_token=)")
+  | eval severity=case(
+      match(request_uri, "(?i)(password=|passwd=|pwd=)"), "CRITICAL",
+      match(request_uri, "(?i)(token=|api_key=|secret=)"), "HIGH",
+      true(), "MEDIUM"
+  )
+  | eval exposed_param=replace(request_uri, "(?i)(password|passwd|token|api_key|secret)=([^&\s]+)", "\1=***REDACTED***")
+  | stats count as attempt_count,
+          values(exposed_param) as exposed_parameters,
+          values(status_code) as response_codes
+          by client_ip, attack_type, severity
+  | eval risk_score=case(
+      severity="CRITICAL", attempt_count*15,
+      severity="HIGH", attempt_count*10,
+      true(), attempt_count*5
+  )
+  | sort -risk_score
+  | table client_ip, attack_type, severity, attempt_count, risk_score, exposed_parameters
+
+false_positives:
+  - Legacy applications passing credentials via URL
+  - Development/test environments
+
+response:
+  - Immediately rotate exposed credentials
+  - Force re-authentication for affected users
+  - Review application code for hardcoded credentials
