@@ -1,0 +1,28 @@
+title: WS09 - Unusual Off-Hours Web Access Detection
+id: ws09-unusual-access-time
+status: production
+description: Detects access outside normal business hours from new IPs
+author: aqsin1337
+date: 2026/04/17
+modified: 2026/04/17
+tags:
+  - web_server
+  - off_hours
+severity: medium
+platform: splunk
+
+splunk_query: |
+  source="http:web_logs"
+  | eval hour=strftime(_time, "%H")
+  | where hour < "08" OR hour > "20"
+  | stats count by client_ip, hour
+  | where count > 30
+  | eval attack_type="WS09-Off-Hours Access"
+  | eval severity="MEDIUM"
+  | table _time, client_ip, hour, attack_type, severity, count
+
+false_positives:
+  - Legitimate night-shift users
+
+response:
+  - Verify user behavior
