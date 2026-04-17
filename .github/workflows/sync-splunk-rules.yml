@@ -36,7 +36,7 @@ host = os.getenv('SPLUNK_HOST')
 user = os.getenv('SPLUNK_USERNAME')
 pwd  = os.getenv('SPLUNK_PASSWORD')
 
-APP_CONTEXT = "search"     # <<< BURANI DƏYİŞDİR! (SIEM, search, və ya sənin app adın)
+APP_CONTEXT = "search"   # <<< BURANI DƏYİŞDİR! (əgər sənin Splunk app-in başqa addırsa)
 
 if not all([host, user, pwd]):
     print("❌ Secrets tapılmadı!")
@@ -46,7 +46,7 @@ auth = HTTPBasicAuth(user, pwd)
 base_url = f"https://{host}/servicesNS/nobody/{APP_CONTEXT}"
 
 files = glob.glob('splunk/WS*.yml')
-print(f"Tapılan fayl: {len(files)}\n")
+print(f"Tapılan rule faylı: {len(files)}\n")
 
 for filepath in files:
     try:
@@ -71,30 +71,27 @@ for filepath in files:
             'is_scheduled': '1',
             'alert.track': '1',
             'alert.condition': 'number of results > 0',
-            'disabled': '0',
-            'alert.suppress': '0'
+            'disabled': '0'
         }
 
-        print(f"🔄 {title} ({alert_id}) işlənir...")
+        print(f"🔄 İşlənir: {title} ({alert_id})")
 
         # Update cəhdi
         r = requests.post(f"{base_url}/saved/searches/{alert_id}", auth=auth, data=payload, verify=False, timeout=30)
-
         if r.status_code in (200, 201):
-            print(f"✅ UĞURLU: {title}\n")
+            print(f"✅ UĞURLU (update): {title}\n")
             continue
 
         # Create cəhdi
         r = requests.post(f"{base_url}/saved/searches", auth=auth, data=payload, verify=False, timeout=30)
-
         if r.status_code in (200, 201):
-            print(f"✅ UĞURLU (yeni yaradıldı): {title}\n")
+            print(f"✅ UĞURLU (create): {title}\n")
         else:
             print(f"❌ XƏTA: {title} | Status: {r.status_code}")
-            print(f"Cavab: {r.text[:600]}\n")
+            print(f"Cavab: {r.text[:700]}\n")
 
     except Exception as e:
         print(f"❌ Xəta ({filepath}): {e}\n")
 
-print("Bitdi.")
+print("✅ Bitdi.")
 EOF
