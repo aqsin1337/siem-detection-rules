@@ -1,0 +1,26 @@
+title: WS12 - Information Disclosure / Credential Harvesting Attempt
+id: ws12-info-disclosure
+status: production
+description: Detects requests to sensitive paths that may leak credentials or configuration
+author: aqsin1337
+date: 2026/04/17
+modified: 2026/04/17
+tags:
+  - web_server
+  - info_disclosure
+severity: high
+platform: splunk
+
+splunk_query: |
+  source="http:web_logs"
+  | where request_uri LIKE "%/.env%" OR request_uri LIKE "%/config%" OR request_uri LIKE "%/backup%" OR request_uri LIKE "%/wp-config%" OR request_uri LIKE "%/credentials%"
+  | stats count by client_ip, request_uri
+  | eval attack_type="WS12-Information Disclosure Attempt"
+  | eval severity="HIGH"
+  | table _time, client_ip, request_uri, attack_type, severity, count
+
+false_positives:
+  - Legitimate admin access
+
+response:
+  - Immediate block + alert
