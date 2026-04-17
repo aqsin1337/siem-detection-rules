@@ -1,0 +1,27 @@
+title: WS04 - Suspicious User-Agent Detection
+id: ws04-suspicious-user-agent
+status: production
+description: Detects requests with known malicious, empty or automated tool User-Agents
+author: aqsin1337
+date: 2026/04/17
+modified: 2026/04/17
+tags:
+  - web_server
+  - user_agent
+severity: medium
+platform: splunk
+
+splunk_query: |
+  source="http:web_logs"
+  | where user_agent IN ("-*", "*curl*", "*wget*", "*python*", "*go-http*", "*nikto*", "*dirbuster*", "*gobuster*", "*sqlmap*") OR user_agent=""
+  | stats count by client_ip, user_agent, request_uri
+  | where count > 5
+  | eval attack_type="WS04-Suspicious User-Agent"
+  | eval severity=case(count>30, "HIGH", true(), "MEDIUM")
+  | table _time, client_ip, user_agent, attack_type, severity, count
+
+false_positives:
+  - Legitimate curl/wget scripts from known IPs
+
+response:
+  - Review and block if malicious
