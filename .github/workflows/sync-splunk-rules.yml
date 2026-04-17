@@ -40,10 +40,11 @@ host = os.getenv('SPLUNK_HOST')
 user = os.getenv('SPLUNK_USERNAME')
 pwd = os.getenv('SPLUNK_PASSWORD')
 
-APP_CONTEXT = "search"   # ← Buranı dəyişdirə bilərsən (məsələn: SIEM, your_app_name)
+# ←←← BURANI DƏYİŞDİR !!!
+APP_CONTEXT = "search"          # Əgər işləmirsə, "SIEM" və ya öz app adını yaz
 
 if not all([host, user, pwd]):
-    print("❌ XƏTA: SPLUNK secrets tapılmadı!")
+    print("❌ XƏTA: SPLUNK_HOST, USERNAME və ya PASSWORD secret-ləri tapılmadı!")
     sys.exit(1)
 
 auth = HTTPBasicAuth(user, pwd)
@@ -61,7 +62,7 @@ for filepath in files:
             rule = yaml.safe_load(f)
 
         if not rule or 'id' not in rule or 'splunk_query' not in rule:
-            print(f"⚠️ Atlanır: {filepath} (id və ya splunk_query yoxdur)")
+            print(f"⚠️ Atlanır: {filepath}")
             continue
 
         alert_id = str(rule['id']).strip()
@@ -89,37 +90,36 @@ for filepath in files:
 
         print(f"🔄 İşlənir → {title} (ID: {alert_id})")
 
-        # Update cəhdi
-        r = requests.post(f"{base_url}/saved/searches/{alert_id}", 
-                         auth=auth, data=payload, verify=False, timeout=30)
+        # 1. Mövcudluğu yoxla (GET)
+        check_url = f"{base_url}/saved/searches/{alert_id}"
+        check = requests.get(check_url, auth=auth, verify=False, timeout=20)
+
+        if check.status_code == 200:
+            # Update et
+            r = requests.post(check_url, auth=auth, data=payload, verify=False, timeout=30)
+            action = "update"
+        else:
+            # Create et
+            r = requests.post(f"{base_url}/saved/searches", auth=auth, data=payload, verify=False, timeout=30)
+            action = "create"
 
         if r.status_code in (200, 201):
-            print(f"✅ UĞURLU (update): {title}\n")
-            success += 1
-            continue
-
-        # Create cəhdi
-        print(f"   Update alınmadı ({r.status_code}), create edilir...")
-        r = requests.post(f"{base_url}/saved/searches", 
-                         auth=auth, data=payload, verify=False, timeout=30)
-
-        if r.status_code in (200, 201):
-            print(f"✅ UĞURLU (create): {title}\n")
+            print(f"✅ UĞURLU ({action}): {title}\n")
             success += 1
         else:
-            print(f"❌ XƏTA: {title}")
+            print(f"❌ XƏTA ({action}): {title}")
             print(f"   Status: {r.status_code}")
-            print(f"   Cavab: {r.text[:700]}\n")
+            print(f"   Cavab: {r.text[:800]}\n")
             failed += 1
 
     except Exception as e:
         print(f"❌ Python xətası ({filepath}): {e}\n")
         failed += 1
 
-print("=" * 60)
+print("=" * 70)
 print(f"🎯 NƏTİCƏ → Uğurlu: {success} | Xətalı: {failed}")
 if failed == 0 and success > 0:
-    print("✅ Hamısı uğurla sinxronlaşdırıldı!")
+    print("✅ Bütün rule-lar uğurla sinxronlaşdırıldı!")
 else:
-    print("⚠️ Bəzi xətalar var.")
+    print("⚠️ Xətalar var. Yuxarıdakı loga bax.")
 EOF
