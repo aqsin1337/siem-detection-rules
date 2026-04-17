@@ -36,26 +36,24 @@ import glob
 import sys
 from requests.auth import HTTPBasicAuth
 
-# ====================== KONFIGURASİYA ======================
 host = os.getenv('SPLUNK_HOST')
 user = os.getenv('SPLUNK_USERNAME')
 pwd = os.getenv('SPLUNK_PASSWORD')
 
-# Əgər Splunk-da konkret app-də yaratmaq istəyirsənsə, dəyişdir (məsələn: "search" və ya "SIEM")
-APP_CONTEXT = "search"        # "nobody/search" və ya öz app adın
+APP_CONTEXT = "search"   # ← Buranı dəyişdirə bilərsən (məsələn: SIEM, your_app_name)
 
 if not all([host, user, pwd]):
-    print("❌ XƏTA: SPLUNK_HOST, SPLUNK_USERNAME və ya SPLUNK_PASSWORD secret-ləri tapılmadı!")
+    print("❌ XƏTA: SPLUNK secrets tapılmadı!")
     sys.exit(1)
 
 auth = HTTPBasicAuth(user, pwd)
 base_url = f"https://{host}/servicesNS/nobody/{APP_CONTEXT}"
 
 files = glob.glob('splunk/WS*.yml')
-print(f"✅ Tapılan rule fayl sayı: {len(files)}\n")
+print(f"✅ Tapılan rule sayı: {len(files)}\n")
 
-success_count = 0
-failed_count = 0
+success = 0
+failed = 0
 
 for filepath in files:
     try:
@@ -63,20 +61,20 @@ for filepath in files:
             rule = yaml.safe_load(f)
 
         if not rule or 'id' not in rule or 'splunk_query' not in rule:
-            print(f"⚠️ Atlanır (id və ya splunk_query yoxdur): {filepath}")
+            print(f"⚠️ Atlanır: {filepath} (id və ya splunk_query yoxdur)")
             continue
 
         alert_id = str(rule['id']).strip()
         title = rule.get('title', alert_id)
-        search_query = str(rule['splunk_query']).strip()
+        search = str(rule['splunk_query']).strip()
 
-        if not search_query:
-            print(f"⚠️ Query boşdur, atlanır: {title}")
+        if not search:
+            print(f"⚠️ Query boşdur: {title}")
             continue
 
         payload = {
             'name': alert_id,
-            'search': search_query,
+            'search': search,
             'description': f"GitHub Auto Sync - {title}",
             'cron_schedule': '*/10 * * * *',
             'dispatch.earliest_time': '-60m',
@@ -86,42 +84,42 @@ for filepath in files:
             'alert.condition': 'number of results > 0',
             'disabled': '0',
             'alert.suppress': '0',
-            'action.email': '0'                    # email action istəmirsinizsə
+            'action.email': '0'
         }
 
-        print(f"🔄 İşlənir: {title} (ID: {alert_id})")
+        print(f"🔄 İşlənir → {title} (ID: {alert_id})")
 
-        # 1. Update cəhdi
-        update_url = f"{base_url}/saved/searches/{alert_id}"
-        r = requests.post(update_url, auth=auth, data=payload, verify=False, timeout=30)
+        # Update cəhdi
+        r = requests.post(f"{base_url}/saved/searches/{alert_id}", 
+                         auth=auth, data=payload, verify=False, timeout=30)
 
         if r.status_code in (200, 201):
             print(f"✅ UĞURLU (update): {title}\n")
-            success_count += 1
+            success += 1
             continue
 
-        # 2. Update alınmadısa → Create et
-        print(f"   Update alınmadı ({r.status_code}), create cəhd edilir...")
-        create_url = f"{base_url}/saved/searches"
-        r = requests.post(create_url, auth=auth, data=payload, verify=False, timeout=30)
+        # Create cəhdi
+        print(f"   Update alınmadı ({r.status_code}), create edilir...")
+        r = requests.post(f"{base_url}/saved/searches", 
+                         auth=auth, data=payload, verify=False, timeout=30)
 
         if r.status_code in (200, 201):
             print(f"✅ UĞURLU (create): {title}\n")
-            success_count += 1
+            success += 1
         else:
             print(f"❌ XƏTA: {title}")
             print(f"   Status: {r.status_code}")
             print(f"   Cavab: {r.text[:700]}\n")
-            failed_count += 1
+            failed += 1
 
     except Exception as e:
-        print(f"❌ Python xətası {filepath} faylında: {e}\n")
-        failed_count += 1
+        print(f"❌ Python xətası ({filepath}): {e}\n")
+        failed += 1
 
-print("="*60)
-print(f"🎯 NƏTİCƏ: {success_count} uğurlu, {failed_count} xətalı")
-if failed_count == 0:
-    print("✅ Bütün rule-lar uğurla sinxronlaşdırıldı!")
+print("=" * 60)
+print(f"🎯 NƏTİCƏ → Uğurlu: {success} | Xətalı: {failed}")
+if failed == 0 and success > 0:
+    print("✅ Hamısı uğurla sinxronlaşdırıldı!")
 else:
-    print("⚠️ Bəzi rule-larda xəta var.")
+    print("⚠️ Bəzi xətalar var.")
 EOF
