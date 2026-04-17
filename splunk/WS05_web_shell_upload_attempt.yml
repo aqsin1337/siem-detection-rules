@@ -1,0 +1,28 @@
+title: WS05 - Web Shell Upload Attempt Detection
+id: ws05-web-shell-upload
+status: production
+description: Detects attempts to upload web shells via common extensions and paths
+author: aqsin1337
+date: 2026/04/17
+modified: 2026/04/17
+tags:
+  - web_server
+  - web_shell
+severity: critical
+platform: splunk
+
+splunk_query: |
+  source="http:web_logs"
+  | where http_method="POST" AND (request_uri LIKE "%upload%" OR request_uri LIKE "%.php%" OR request_uri LIKE "%.asp%" OR request_uri LIKE "%shell%")
+  | where status_code=200 OR status_code=201
+  | stats count by client_ip, request_uri, http_method
+  | where count > 2
+  | eval attack_type="WS05-Web Shell Upload Attempt"
+  | eval severity="CRITICAL"
+  | table _time, client_ip, request_uri, attack_type, severity
+
+false_positives:
+  - Legitimate file uploads from internal applications
+
+response:
+  - Immediate investigation + file quarantine
