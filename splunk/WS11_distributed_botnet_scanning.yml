@@ -1,0 +1,27 @@
+title: WS11 - Distributed Botnet-Style Scanning Detection
+id: ws11-distributed-botnet-scan
+status: production
+description: Detects scanning behavior from multiple IPs in short time (botnet / distributed attack)
+author: aqsin1337
+date: 2026/04/17
+modified: 2026/04/17
+tags:
+  - web_server
+  - botnet
+severity: high
+platform: splunk
+
+splunk_query: |
+  source="http:web_logs"
+  | bucket _time span=3m
+  | stats dc(client_ip) as unique_ips, count as total by _time, request_uri
+  | where unique_ips > 8 AND total > 50
+  | eval attack_type="WS11-Distributed Botnet Scan"
+  | eval severity="HIGH"
+  | table _time, request_uri, attack_type, severity, unique_ips, total
+
+false_positives:
+  - CDN or load balancer traffic
+
+response:
+  - Add IPs to blocklist
