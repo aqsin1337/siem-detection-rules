@@ -1,0 +1,29 @@
+title: WS15 - Rapid Web Authentication Brute Force Detection
+id: ws15-web-auth-brute-force
+status: production
+description: Detects rapid failed login attempts on web login endpoints
+author: aqsin1337
+date: 2026/04/17
+modified: 2026/04/17
+tags:
+  - web_server
+  - brute_force
+severity: high
+platform: splunk
+
+splunk_query: |
+  source="http:web_logs"
+  | where request_uri LIKE "%login%" OR request_uri LIKE "%auth%" OR request_uri LIKE "%signin%"
+  | where status_code=401 OR status_code=403
+  | bucket _time span=2m
+  | stats count as failed_attempts by _time, client_ip
+  | where failed_attempts > 25
+  | eval attack_type="WS15-Web Auth Brute Force"
+  | eval severity="HIGH"
+  | table _time, client_ip, attack_type, severity, failed_attempts
+
+false_positives:
+  - Forgotten password attempts
+
+response:
+  - Account lock + IP block
