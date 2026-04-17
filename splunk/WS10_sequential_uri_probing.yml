@@ -1,0 +1,26 @@
+title: WS10 - Sequential URI Probing Detection
+id: ws10-sequential-uri-probing
+status: production
+description: Detects sequential directory/file enumeration (common in manual or scripted attacks)
+author: aqsin1337
+date: 2026/04/17
+modified: 2026/04/17
+tags:
+  - web_server
+severity: high
+platform: splunk
+
+splunk_query: |
+  source="http:web_logs"
+  | sort _time
+  | streamstats window=20 current=true count as seq by client_ip
+  | where seq > 15
+  | eval attack_type="WS10-Sequential URI Probing"
+  | eval severity="HIGH"
+  | table _time, client_ip, request_uri, attack_type, severity
+
+false_positives:
+  - Legitimate site crawlers
+
+response:
+  - Block and investigate
