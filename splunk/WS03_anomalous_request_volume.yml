@@ -1,0 +1,29 @@
+title: WS03 - Anomalous Request Volume per IP Detection
+id: ws03-anomalous-request-volume
+status: production
+description: Detects sudden spike in request volume from single client (DDoS-like behavior or bot activity)
+author: aqsin1337
+date: 2026/04/17
+modified: 2026/04/17
+tags:
+  - web_server
+  - ddos
+severity: critical
+platform: splunk
+
+splunk_query: |
+  source="http:web_logs"
+  | bucket _time span=1m
+  | stats count as req_per_min by _time, client_ip
+  | eventstats avg(req_per_min) as avg_req, stdev(req_per_min) as stdev_req by client_ip
+  | where req_per_min > avg_req + (stdev_req * 4) AND req_per_min > 300
+  | eval attack_type="WS03-Anomalous Request Volume"
+  | eval severity="CRITICAL"
+  | eval risk_score=req_per_min * 2
+  | table _time, client_ip, attack_type, severity, risk_score, req_per_min, avg_req
+
+false_positives:
+  - Legitimate API clients with burst traffic
+
+response:
+  - Immediate WAF rate-limit + block
