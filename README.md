@@ -30,3 +30,4 @@ Rules are deployed via API to Splunk and QRadar automatically.
 
 ## Author
 aqsin1337
+\\
