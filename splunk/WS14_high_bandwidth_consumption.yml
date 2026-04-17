@@ -1,0 +1,28 @@
+title: WS14 - High Bandwidth Consumption per Client
+id: ws14-high-bandwidth
+status: production
+description: Detects clients consuming abnormal amount of bandwidth (possible exfil or scraping)
+author: aqsin1337
+date: 2026/04/17
+modified: 2026/04/17
+tags:
+  - web_server
+  - bandwidth
+severity: high
+platform: splunk
+
+splunk_query: |
+  source="http:web_logs"
+  | bucket _time span=10m
+  | stats sum(bytes_out) as total_bytes by _time, client_ip
+  | where total_bytes > 100000000
+  | eval attack_type="WS14-High Bandwidth Consumption"
+  | eval severity="HIGH"
+  | eval risk_score=total_bytes / 1000000
+  | table _time, client_ip, attack_type, severity, risk_score, total_bytes
+
+false_positives:
+  - Large legitimate downloads
+
+response:
+  - Rate limit + investigate
