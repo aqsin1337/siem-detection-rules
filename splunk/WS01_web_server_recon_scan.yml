@@ -1,0 +1,34 @@
+title: WS01 - Web Server Reconnaissance Scanning Detection
+id: ws01-web-server-recon-scan
+status: production
+description: Detects aggressive reconnaissance scanning by identifying clients requesting unusually high number of unique URIs in short time windows (typical of automated scanners and bots)
+author: aqsin1337
+date: 2026/04/17
+modified: 2026/04/17
+references:
+  - https://www.splunk.com/en_us/blog/security/detecting-web-application-attacks-with-splunk.html
+tags:
+  - attack.reconnaissance
+  - web_server
+severity: high
+platform: splunk
+
+splunk_query: |
+  source="http:web_logs"
+  | bucket _time span=5m
+  | stats dc(request_uri) as unique_uris, count as total_requests by _time, client_ip
+  | where unique_uris > 50 AND total_requests > 100
+  | eval attack_type="WS01-Reconnaissance Scan"
+  | eval severity=case(unique_uris>150, "CRITICAL", unique_uris>80, "HIGH", true(), "MEDIUM")
+  | eval risk_score=unique_uris * 2 + total_requests
+  | sort -risk_score
+  | table _time, client_ip, attack_type, severity, risk_score, unique_uris, total_requests
+
+false_positives:
+  - Legitimate web crawlers (Googlebot, Bingbot with verified UA)
+  - Authorized vulnerability scanners from known IPs
+
+response:
+  - Block IP at WAF level
+  - Review full access log for the client
+  - Add to threat intelligence list
