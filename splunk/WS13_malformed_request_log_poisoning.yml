@@ -1,0 +1,27 @@
+title: WS13 - Malformed Request and Log Poisoning Attempt
+id: ws13-log-poisoning
+status: production
+description: Detects requests with malicious characters used for log poisoning or injection
+author: aqsin1337
+date: 2026/04/17
+modified: 2026/04/17
+tags:
+  - web_server
+  - log_injection
+severity: medium
+platform: splunk
+
+splunk_query: |
+  source="http:web_logs"
+  | where request_uri MATCHES ".*(<script|%3C|%27|union|select|1=1|%0a|%0d).*" 
+  | stats count by client_ip
+  | where count > 3
+  | eval attack_type="WS13-Log Poisoning Attempt"
+  | eval severity="MEDIUM"
+  | table _time, client_ip, attack_type, severity, count
+
+false_positives:
+  - Legitimate URL parameters
+
+response:
+  - Review and block
