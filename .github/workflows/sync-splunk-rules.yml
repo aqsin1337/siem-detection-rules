@@ -39,21 +39,21 @@ user = os.getenv('SPLUNK_USERNAME')
 pwd = os.getenv('SPLUNK_PASSWORD')
 
 if not all([host, user, pwd]):
-    print("❌ Secrets tapılmadı! SPLUNK_HOST, USERNAME və PASSWORD yoxlan.")
+    print("❌ Secrets tapılmadı!")
     exit(1)
 
 auth = HTTPBasicAuth(user, pwd)
 base_url = f"https://{host}/servicesNS/nobody/search"
 
 files = glob.glob('splunk/WS*.yml')
-print(f"Tapılan WS rule sayı: {len(files)}")
+print(f"Tapılan rule sayı: {len(files)}")
 
 for filepath in files:
     with open(filepath, 'r', encoding='utf-8') as f:
         rule = yaml.safe_load(f)
 
     if not rule or 'id' not in rule or 'splunk_query' not in rule:
-        print(f"⚠️ Atlanır: {filepath} (id və ya query yoxdur)")
+        print(f"⚠️ Atlanır: {filepath}")
         continue
 
     alert_id = rule['id']
@@ -67,7 +67,7 @@ for filepath in files:
     payload = {
         'name': alert_id,
         'search': search,
-        'description': f"GitHub-dan avtomatik sync - {title}",
+        'description': f"GitHub Auto Sync - {title}",
         'cron_schedule': '*/10 * * * *',
         'dispatch.earliest_time': '-60m',
         'dispatch.latest_time': 'now',
@@ -77,16 +77,13 @@ for filepath in files:
         'disabled': '0'
     }
 
-    # Əvvəlcə update cəhd et
     r = requests.post(f"{base_url}/saved/searches/{alert_id}", auth=auth, data=payload, verify=False)
 
     if r.status_code == 404:
-        # Yeni yarat
         r = requests.post(f"{base_url}/saved/searches", auth=auth, data=payload, verify=False)
 
     if r.status_code in (200, 201):
-        print(f"✅ UĞURLU: {title} ({alert_id})")
+        print(f"✅ UĞURLU: {title}")
     else:
         print(f"❌ XƏTA: {title} | Status: {r.status_code}")
-        print(r.text[:500])
 EOF
