@@ -1,16 +1,16 @@
-name: Sync Splunk Rules from GitHub (API)
+name: Sync Splunk Rules from GitHub
 
 on:
   push:
     paths:
-      - 'splunk/*.yml'
+      - 'splunk/WS*.yml'
   workflow_dispatch:
 
 jobs:
   sync-to-splunk:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -21,69 +21,75 @@ jobs:
       - name: Install dependencies
         run: pip install pyyaml requests
 
-      - name: Sync Rules to Splunk via REST API
+      - name: Sync Rules to Splunk
         env:
-          SPLUNK_HOST: ${{ secrets.16.16.99.235:8089 }}      # məs: 16.16.99.235:8089
-          SPLUNK_USERNAME: ${{ secrets.aqsin }}
-          SPLUNK_PASSWORD: ${{ secrets.miriSalam123aaa }}
+          SPLUNK_HOST: ${{ secrets.SPLUNK_HOST }}
+          SPLUNK_USERNAME: ${{ secrets.SPLUNK_USERNAME }}
+          SPLUNK_PASSWORD: ${{ secrets.SPLUNK_PASSWORD }}
         run: |
-          python - << 'PYTHON'
-          import os, yaml, requests, glob
-          from requests.auth import HTTPBasicAuth
+          python - << 'EOF'
+import os
+import yaml
+import requests
+import glob
+from requests.auth import HTTPBasicAuth
 
-          host = os.getenv('SPLUNK_HOST')
-          user = os.getenv('SPLUNK_USERNAME')
-          pwd  = os.getenv('SPLUNK_PASSWORD')
-          auth = HTTPBasicAuth(user, pwd)
-          base_url = f"https://{host}/servicesNS/nobody/search"
+host = os.getenv('SPLUNK_HOST')
+user = os.getenv('SPLUNK_USERNAME')
+pwd  = os.getenv('SPLUNK_PASSWORD')
 
-          files = glob.glob('splunk/WS*.yml')
+if not all([host, user, pwd]):
+    print("❌ Missing secrets!")
+    exit(1)
 
-          for filepath in files:
-              with open(filepath, encoding='utf-8') as f:
-                  rule = yaml.safe_load(f)
+auth = HTTPBasicAuth(user, pwd)
+base_url = f"https://{host}/servicesNS/nobody/search"
 
-              if not rule or 'id' not in rule:
-                  print(f"⚠️ Skipping {filepath} - no 'id'")
-                  continue
+files = glob.glob('splunk/WS*.yml')
 
-              alert_id = rule['id']
-              title = rule.get('title', alert_id)
-              search = rule.get('splunk_query', '').strip()
+for filepath in files:
+    with open(filepath, 'r', encoding='utf-8') as f:
+        rule = yaml.safe_load(f)
 
-              if not search:
-                  print(f"⚠️ Skipping {title} - no splunk_query")
-                  continue
+    if not rule or 'id' not in rule or 'splunk_query' not in rule:
+        print(f"⚠️ Skipping {filepath} (missing id or splunk_query)")
+        continue
 
-              severity = rule.get('severity', 'medium').lower()
-              sev_map = {'low': '2', 'medium': '3', 'high': '4', 'critical': '5'}
-              splunk_sev = sev_map.get(severity, '3')
+    alert_id = rule['id']
+    title = rule.get('title', alert_id)
+    search = rule['splunk_query'].strip()
 
-              payload = {
-                  'name': alert_id,
-                  'search': search,
-                  'description': rule.get('description', f"GitHub Rule: {title}"),
-                  'cron_schedule': '*/5 * * * *',
-                  'dispatch.earliest_time': '-60m',
-                  'dispatch.latest_time': 'now',
-                  'alert.track': '1',
-                  'alert.severity': splunk_sev,
-                  'is_scheduled': '1',
-                  'alert.condition': 'number of results > 0',
-                  'disabled': '0'
-              }
+    severity = rule.get('severity', 'medium').lower()
+    sev_map = {'low': '2', 'medium': '3', 'high': '4', 'critical': '5'}
+    splunk_sev = sev_map.get(severity, '3')
 
-              # Update cəhd et
-              update_url = f"{base_url}/saved/searches/{alert_id}"
-              r = requests.post(update_url, auth=auth, data=payload, verify=False)
+    payload = {
+        'name': alert_id,
+        'search': search,
+        'description': rule.get('description', f"Auto-synced from GitHub: {title}"),
+        'cron_schedule': '*/10 * * * *',
+        'dispatch.earliest_time': '-60m',
+        'dispatch.latest_time': 'now',
+        'alert.track': '1',
+        'alert.severity': splunk_sev,
+        'is_scheduled': '1',
+        'alert.condition': 'number of results > 0',
+        'disabled': '0',
+        'action.email': '0'
+    }
 
-              if r.status_code == 404:
-                  # Yeni yarat
-                  create_url = f"{base_url}/saved/searches"
-                  r = requests.post(create_url, auth=auth, data=payload, verify=False)
+    # Try to update first
+    update_url = f"{base_url}/saved/searches/{alert_id}"
+    r = requests.post(update_url, auth=auth, data=payload, verify=False, timeout=30)
 
-              if r.status_code in (200, 201):
-                  print(f"✅ Success → {title} ({alert_id})")
-              else:
-                  print(f"❌ Failed → {title} | Status: {r.status_code} | {r.text[:300]}")
-          PYTHON
+    if r.status_code == 404:
+        # Create new
+        create_url = f"{base_url}/saved/searches"
+        r = requests.post(create_url, auth=auth, data=payload, verify=False, timeout=30)
+
+    if r.status_code in (200, 201):
+        print(f"✅ SUCCESS: {title} ({alert_id})")
+    else:
+        print(f"❌ FAILED: {title} | Status: {r.status_code}")
+        print(r.text[:500])
+EOF
