@@ -1,0 +1,27 @@
+title: WS07 - HTTP Method Abuse Detection
+id: ws07-http-method-abuse
+status: production
+description: Detects abuse of dangerous HTTP methods (PUT, DELETE, TRACE, OPTIONS flood)
+author: aqsin1337
+date: 2026/04/17
+modified: 2026/04/17
+tags:
+  - web_server
+severity: high
+platform: splunk
+
+splunk_query: |
+  source="http:web_logs"
+  | where http_method IN ("PUT", "DELETE", "TRACE", "OPTIONS", "CONNECT")
+  | bucket _time span=5m
+  | stats count by _time, client_ip, http_method
+  | where count > 15
+  | eval attack_type="WS07-HTTP Method Abuse"
+  | eval severity="HIGH"
+  | table _time, client_ip, http_method, attack_type, severity, count
+
+false_positives:
+  - Legitimate REST API usage
+
+response:
+  - Block method at WAF
