@@ -1,0 +1,31 @@
+title: WS02 - High Error Rate from Single Client Detection
+id: ws02-high-error-rate
+status: production
+description: Detects clients causing abnormal 4xx/5xx error rates which may indicate probing, misconfiguration exploitation or DoS attempts
+author: aqsin1337
+date: 2026/04/17
+modified: 2026/04/17
+tags:
+  - web_server
+  - error_spike
+severity: high
+platform: splunk
+
+splunk_query: |
+  source="http:web_logs"
+  | where status_code >= 400
+  | bucket _time span=10m
+  | stats count as error_count, values(status_code) as error_codes by _time, client_ip
+  | where error_count > 40
+  | eval attack_type="WS02-High Error Rate"
+  | eval severity=case(error_count>100, "CRITICAL", error_count>60, "HIGH", true(), "MEDIUM")
+  | eval risk_score=error_count * 3
+  | table _time, client_ip, attack_type, severity, risk_score, error_count, error_codes
+
+false_positives:
+  - Broken links from legitimate users
+  - Misconfigured monitoring tools
+
+response:
+  - Temporary IP block
+  - Check server health and application logs
