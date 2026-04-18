@@ -1,0 +1,117 @@
+name: Sync Splunk Rules to Splunk
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  sync-to-splunk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install pyyaml requests urllib3
+
+      - name: Sync Rules to Splunk
+        env:
+          SPLUNK_HOST: ${{ secrets.SPLUNK_HOST }}
+          SPLUNK_USERNAME: ${{ secrets.SPLUNK_USERNAME }}
+          SPLUNK_PASSWORD: ${{ secrets.SPLUNK_PASSWORD }}
+        run: |
+          python3 << 'PYEOF'
+          import os, yaml, requests, glob, sys
+          import urllib3
+          urllib3.disable_warnings()
+
+          host = os.getenv('SPLUNK_HOST', '').strip()
+          user = os.getenv('SPLUNK_USERNAME', '').strip()
+          pwd  = os.getenv('SPLUNK_PASSWORD', '').strip()
+
+          print(f"Host: {host}")
+          print(f"User: {user}")
+
+          if not all([host, user, pwd]):
+              print("XETA: Secrets tapilmadi! SPLUNK_HOST, SPLUNK_USERNAME, SPLUNK_PASSWORD lazimdir.")
+              sys.exit(1)
+
+          base_url = f"http://{host}/servicesNS/nobody/search/saved/searches"
+          auth = (user, pwd)
+
+          files = sorted(glob.glob('splunk/WS*.yml'))
+          print(f"Tapilan rule sayi: {len(files)}")
+
+          success = 0
+          failed = 0
+
+          for filepath in files:
+              try:
+                  with open(filepath, encoding='utf-8') as f:
+                      rule = yaml.safe_load(f)
+
+                  alert_id = str(rule.get('id', '')).strip()
+                  title    = str(rule.get('title', alert_id)).strip()
+                  search   = str(rule.get('splunk_query', '')).strip()
+
+                  if not alert_id or not search:
+                      print(f"ATLANIR (id/query yoxdur): {filepath}")
+                      continue
+
+                  payload = {
+                      'name': alert_id,
+                      'search': search,
+                      'description': f"GitHub Sync - {title}",
+                      'cron_schedule': '*/10 * * * *',
+                      'dispatch.earliest_time': '-60m',
+                      'dispatch.latest_time': 'now',
+                      'is_scheduled': '1',
+                      'alert.track': '1',
+                      'disabled': '0',
+                      'output_mode': 'json'
+                  }
+
+                  # Əvvəlcə update cəhdi (POST to existing)
+                  r = requests.post(
+                      f"{base_url}/{alert_id}",
+                      auth=auth,
+                      data=payload,
+                      verify=False,
+                      timeout=30
+                  )
+
+                  if r.status_code in (200, 201):
+                      print(f"OK (update): {title}")
+                      success += 1
+                      continue
+
+                  # Yoxdursa create et
+                  r = requests.post(
+                      base_url,
+                      auth=auth,
+                      data=payload,
+                      verify=False,
+                      timeout=30
+                  )
+
+                  if r.status_code in (200, 201):
+                      print(f"OK (create): {title}")
+                      success += 1
+                  else:
+                      print(f"XETA: {title} | Status: {r.status_code} | {r.text[:300]}")
+                      failed += 1
+
+              except Exception as e:
+                  print(f"XETA ({filepath}): {e}")
+                  failed += 1
+
+          print(f"\nNETICE: {success} ugurlu, {failed} xetali")
+          if failed > 0:
+              sys.exit(1)
+          PYEOF
