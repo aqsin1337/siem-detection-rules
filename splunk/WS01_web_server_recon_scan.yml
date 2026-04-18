@@ -1,34 +1,19 @@
-title: WS01 - Web Server Reconnaissance Scanning Detection
 id: ws01-web-server-recon-scan
+title: WS01 - Web Server Reconnaissance Scanning Detection
+description: Detects high volume of requests from a single IP targeting multiple unique URIs within a short time window, indicating automated reconnaissance or vulnerability scanning activity.
 status: production
-description: Detects aggressive reconnaissance scanning by identifying clients requesting unusually high number of unique URIs in short time windows (typical of automated scanners and bots)
 author: aqsin1337
-date: 2026/04/17
-modified: 2026/04/17
-references:
-  - https://www.splunk.com/en_us/blog/security/detecting-web-application-attacks-with-splunk.html
+date: 2025-04-18
 tags:
   - attack.reconnaissance
-  - web_server
+  - attack.t1595
+  - web
 severity: high
-platform: splunk
 
-splunk_query: |
-  source="http:web_logs"
+splunk_query: >
+  index=* sourcetype IN ("access_combined", "apache_access", "nginx_access", "iis", "web_logs")
   | bucket _time span=5m
-  | stats dc(request_uri) as unique_uris, count as total_requests by _time, client_ip
+  | stats dc(uri_path) as unique_uris, count as total_requests, values(uri_path) as paths by src_ip, _time
   | where unique_uris > 50 AND total_requests > 100
-  | eval attack_type="WS01-Reconnaissance Scan"
-  | eval severity=case(unique_uris>150, "CRITICAL", unique_uris>80, "HIGH", true(), "MEDIUM")
-  | eval risk_score=unique_uris * 2 + total_requests
-  | sort -risk_score
-  | table _time, client_ip, attack_type, severity, risk_score, unique_uris, total_requests
-
-false_positives:
-  - Legitimate web crawlers (Googlebot, Bingbot with verified UA)
-  - Authorized vulnerability scanners from known IPs
-
-response:
-  - Block IP at WAF level
-  - Review full access log for the client
-  - Add to threat intelligence list
+  | eval severity="HIGH", rule_id="WS01", description="Reconnaissance scanning detected from " + src_ip
+  | table _time, src_ip, unique_uris, total_requests, severity, rule_id, description

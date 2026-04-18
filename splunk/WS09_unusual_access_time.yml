@@ -1,28 +1,22 @@
-title: WS09 - Unusual Off-Hours Web Access Detection
 id: ws09-unusual-access-time
+title: WS09 - Unusual Off-Hours Web Access Detection
+description: Detects high-volume web access during unusual hours (00:00-06:00) targeting sensitive paths, which may indicate automated attacks, unauthorized access, or insider threats operating outside business hours.
 status: production
-description: Detects access outside normal business hours from new IPs
 author: aqsin1337
-date: 2026/04/17
-modified: 2026/04/17
+date: 2025-04-18
 tags:
-  - web_server
-  - off_hours
+  - attack.discovery
+  - attack.t1078
+  - web
 severity: medium
-platform: splunk
 
-splunk_query: |
-  source="http:web_logs"
-  | eval hour=strftime(_time, "%H")
-  | where hour < "08" OR hour > "20"
-  | stats count by client_ip, hour
-  | where count > 30
-  | eval attack_type="WS09-Off-Hours Access"
-  | eval severity="MEDIUM"
-  | table _time, client_ip, hour, attack_type, severity, count
-
-false_positives:
-  - Legitimate night-shift users
-
-response:
-  - Verify user behavior
+splunk_query: >
+  index=* sourcetype IN ("access_combined", "apache_access", "nginx_access", "iis", "web_logs")
+  | eval hour=tonumber(strftime(_time, "%H"))
+  | where hour >= 0 AND hour <= 5
+  | where match(lower(uri_path), "admin|login|config|setup|install|backup|database|db|passwd|shadow|credentials|api/v[0-9]|\.env|\.git|wp-admin|phpmyadmin|manager|console")
+  | bucket _time span=1h
+  | stats count as access_count, dc(uri_path) as unique_paths, values(uri_path) as sensitive_paths, dc(src_ip) as unique_ips, values(src_ip) as source_ips by _time, hour
+  | where access_count > 10
+  | eval rule_id="WS09", severity="MEDIUM", description="Off-hours access to sensitive paths at hour " + tostring(hour) + ":00 - " + tostring(access_count) + " requests from " + tostring(unique_ips) + " IPs"
+  | table _time, hour, access_count, unique_paths, sensitive_paths, unique_ips, source_ips, severity, rule_id, description

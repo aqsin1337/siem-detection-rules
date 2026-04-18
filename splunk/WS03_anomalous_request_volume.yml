@@ -1,29 +1,22 @@
-title: WS03 - Anomalous Request Volume per IP Detection
 id: ws03-anomalous-request-volume
+title: WS03 - Anomalous Request Volume per IP Detection
+description: Detects IPs sending abnormally high request volumes compared to baseline, indicating DDoS attempts, scraping bots, or automated attack tools.
 status: production
-description: Detects sudden spike in request volume from single client (DDoS-like behavior or bot activity)
 author: aqsin1337
-date: 2026/04/17
-modified: 2026/04/17
+date: 2025-04-18
 tags:
-  - web_server
-  - ddos
-severity: critical
-platform: splunk
+  - attack.impact
+  - attack.t1499
+  - web
+severity: high
 
-splunk_query: |
-  source="http:web_logs"
+splunk_query: >
+  index=* sourcetype IN ("access_combined", "apache_access", "nginx_access", "iis", "web_logs")
   | bucket _time span=1m
-  | stats count as req_per_min by _time, client_ip
-  | eventstats avg(req_per_min) as avg_req, stdev(req_per_min) as stdev_req by client_ip
-  | where req_per_min > avg_req + (stdev_req * 4) AND req_per_min > 300
-  | eval attack_type="WS03-Anomalous Request Volume"
-  | eval severity="CRITICAL"
-  | eval risk_score=req_per_min * 2
-  | table _time, client_ip, attack_type, severity, risk_score, req_per_min, avg_req
-
-false_positives:
-  - Legitimate API clients with burst traffic
-
-response:
-  - Immediate WAF rate-limit + block
+  | stats count as req_per_min by src_ip, _time
+  | eventstats avg(req_per_min) as avg_req, stdev(req_per_min) as stdev_req by src_ip
+  | eval threshold = avg_req + (3 * stdev_req)
+  | where req_per_min > threshold AND req_per_min > 200
+  | eval anomaly_score=round((req_per_min - avg_req) / stdev_req, 2)
+  | eval rule_id="WS03", severity="HIGH", description="Anomalous request volume from " + src_ip + " - " + tostring(req_per_min) + " req/min (score: " + tostring(anomaly_score) + ")"
+  | table _time, src_ip, req_per_min, avg_req, threshold, anomaly_score, severity, rule_id, description

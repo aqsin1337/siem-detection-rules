@@ -1,27 +1,25 @@
-title: WS04 - Suspicious User-Agent Detection
 id: ws04-suspicious-user-agent
+title: WS04 - Suspicious User-Agent Detection
+description: Detects requests using known malicious, scanner, or exploit framework user-agent strings including sqlmap, nikto, nmap, metasploit, and other attack tools.
 status: production
-description: Detects requests with known malicious, empty or automated tool User-Agents
 author: aqsin1337
-date: 2026/04/17
-modified: 2026/04/17
+date: 2025-04-18
 tags:
-  - web_server
-  - user_agent
-severity: medium
-platform: splunk
+  - attack.discovery
+  - attack.t1595.002
+  - web
+severity: high
 
-splunk_query: |
-  source="http:web_logs"
-  | where user_agent IN ("-*", "*curl*", "*wget*", "*python*", "*go-http*", "*nikto*", "*dirbuster*", "*gobuster*", "*sqlmap*") OR user_agent=""
-  | stats count by client_ip, user_agent, request_uri
-  | where count > 5
-  | eval attack_type="WS04-Suspicious User-Agent"
-  | eval severity=case(count>30, "HIGH", true(), "MEDIUM")
-  | table _time, client_ip, user_agent, attack_type, severity, count
-
-false_positives:
-  - Legitimate curl/wget scripts from known IPs
-
-response:
-  - Review and block if malicious
+splunk_query: >
+  index=* sourcetype IN ("access_combined", "apache_access", "nginx_access", "iis", "web_logs")
+  | where match(lower(http_user_agent), "sqlmap|nikto|nmap|masscan|zgrab|nuclei|dirbuster|gobuster|wfuzz|hydra|metasploit|msfconsole|python-requests/2\.[01]|curl/7\.[0-4]|wget/1\.[0-1]|python-urllib|go-http-client/1\.1|libwww-perl|scanbot|openvas|nessus|acunetix|burpsuite|havij|pangolin|w3af")
+  | stats count as hit_count, values(uri_path) as targets, values(http_user_agent) as agents, dc(uri_path) as unique_targets by src_ip
+  | eval tool_category=case(
+      match(lower(mvindex(agents,0)),"sqlmap|havij|pangolin"), "SQL Injection Tool",
+      match(lower(mvindex(agents,0)),"nikto|acunetix|w3af|openvas|nessus"), "Web Scanner",
+      match(lower(mvindex(agents,0)),"dirbuster|gobuster|wfuzz"), "Directory Brute Force",
+      match(lower(mvindex(agents,0)),"metasploit|msfconsole"), "Exploit Framework",
+      true(), "Suspicious Tool"
+    )
+  | eval rule_id="WS04", severity="HIGH", description="Malicious user-agent detected from " + src_ip + " using " + tool_category
+  | table src_ip, hit_count, unique_targets, tool_category, agents, severity, rule_id, description

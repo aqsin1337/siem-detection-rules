@@ -1,28 +1,27 @@
-title: WS05 - Web Shell Upload Attempt Detection
 id: ws05-web-shell-upload
+title: WS05 - Web Shell Upload Attempt Detection
+description: Detects attempts to upload web shells or malicious scripts via HTTP POST requests targeting common upload endpoints with suspicious file extensions.
 status: production
-description: Detects attempts to upload web shells via common extensions and paths
 author: aqsin1337
-date: 2026/04/17
-modified: 2026/04/17
+date: 2025-04-18
 tags:
-  - web_server
-  - web_shell
+  - attack.persistence
+  - attack.t1505.003
+  - web
 severity: critical
-platform: splunk
 
-splunk_query: |
-  source="http:web_logs"
-  | where http_method="POST" AND (request_uri LIKE "%upload%" OR request_uri LIKE "%.php%" OR request_uri LIKE "%.asp%" OR request_uri LIKE "%shell%")
-  | where status_code=200 OR status_code=201
-  | stats count by client_ip, request_uri, http_method
-  | where count > 2
-  | eval attack_type="WS05-Web Shell Upload Attempt"
-  | eval severity="CRITICAL"
-  | table _time, client_ip, request_uri, attack_type, severity
-
-false_positives:
-  - Legitimate file uploads from internal applications
-
-response:
-  - Immediate investigation + file quarantine
+splunk_query: >
+  index=* sourcetype IN ("access_combined", "apache_access", "nginx_access", "iis", "web_logs")
+  | where method="POST" AND status IN ("200","201")
+  | where match(lower(uri_path), "\.(php|phtml|php3|php4|php5|php7|phar|asp|aspx|jsp|jspx|cfm|cgi|pl|py|rb|sh|bash|cmd|bat|exe|war|jar)\b")
+     OR match(lower(uri_path), "upload|file_upload|fileupload|uploadfile|up\.php|shell|cmd|exec|webshell")
+  | eval file_ext=replace(lower(uri_path), ".*\.", "")
+  | eval risk_level=case(
+      match(file_ext, "php|asp|aspx|jsp"), "CRITICAL",
+      match(file_ext, "phtml|phar|cfm|cgi"), "CRITICAL",
+      match(file_ext, "py|rb|pl|sh|bash"), "HIGH",
+      true(), "MEDIUM"
+    )
+  | stats count as upload_count, values(uri_path) as upload_paths, values(file_ext) as extensions by src_ip, risk_level
+  | eval rule_id="WS05", severity=risk_level, description="Web shell upload attempt from " + src_ip + " targeting: " + mvjoin(upload_paths, ", ")
+  | table src_ip, upload_count, extensions, upload_paths, risk_level, rule_id, description

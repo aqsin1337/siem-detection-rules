@@ -1,28 +1,23 @@
-title: WS06 - Potential Data Exfiltration via Large Response
 id: ws06-data-exfiltration
+title: WS06 - Potential Data Exfiltration via Large HTTP Response
+description: Detects unusually large HTTP responses that may indicate data exfiltration, unauthorized database dumps, or mass file downloads by a single client.
 status: production
-description: Detects unusually large HTTP responses that may indicate data exfiltration
 author: aqsin1337
-date: 2026/04/17
-modified: 2026/04/17
+date: 2025-04-18
 tags:
-  - web_server
-  - data_exfil
+  - attack.exfiltration
+  - attack.t1048
+  - web
 severity: high
-platform: splunk
 
-splunk_query: |
-  source="http:web_logs"
-  | where bytes_out > 5000000
-  | stats sum(bytes_out) as total_bytes, count as requests by client_ip
-  | where total_bytes > 20000000
-  | eval attack_type="WS06-Data Exfiltration"
-  | eval severity="HIGH"
-  | eval risk_score=total_bytes / 1000000
-  | table _time, client_ip, attack_type, severity, risk_score, total_bytes, requests
-
-false_positives:
-  - Large file downloads (PDF, video, backup)
-
-response:
-  - Check destination URI and data
+splunk_query: >
+  index=* sourcetype IN ("access_combined", "apache_access", "nginx_access", "iis", "web_logs")
+  | where isnum(bytes) AND bytes > 0
+  | bucket _time span=10m
+  | stats sum(bytes) as total_bytes, count as request_count, avg(bytes) as avg_bytes, max(bytes) as max_single_response, values(uri_path) as accessed_paths by src_ip, _time
+  | eval total_mb = round(total_bytes/1024/1024, 2)
+  | where total_mb > 100
+  | eval exfil_risk=case(total_mb>1000, "CRITICAL", total_mb>500, "HIGH", total_mb>100, "MEDIUM", true(), "LOW")
+  | eval rule_id="WS06", description="Large data transfer detected: " + src_ip + " downloaded " + tostring(total_mb) + " MB in 10 minutes"
+  | table _time, src_ip, total_mb, request_count, max_single_response, exfil_risk, accessed_paths, rule_id, description
+  | sort - total_mb

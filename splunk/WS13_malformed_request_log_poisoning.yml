@@ -1,27 +1,30 @@
-title: WS13 - Malformed Request and Log Poisoning Attempt
 id: ws13-log-poisoning
+title: WS13 - Malformed Request and Log Poisoning Attempt
+description: Detects requests containing log injection characters, CRLF injection attempts, null bytes, or oversized headers that may indicate log poisoning, request smuggling, or WAF evasion attempts.
 status: production
-description: Detects requests with malicious characters used for log poisoning or injection
 author: aqsin1337
-date: 2026/04/17
-modified: 2026/04/17
+date: 2025-04-18
 tags:
-  - web_server
-  - log_injection
-severity: medium
-platform: splunk
+  - attack.defense_evasion
+  - attack.t1027
+  - web
+severity: high
 
-splunk_query: |
-  source="http:web_logs"
-  | where request_uri MATCHES ".*(<script|%3C|%27|union|select|1=1|%0a|%0d).*" 
-  | stats count by client_ip
-  | where count > 3
-  | eval attack_type="WS13-Log Poisoning Attempt"
-  | eval severity="MEDIUM"
-  | table _time, client_ip, attack_type, severity, count
-
-false_positives:
-  - Legitimate URL parameters
-
-response:
-  - Review and block
+splunk_query: >
+  index=* sourcetype IN ("access_combined", "apache_access", "nginx_access", "iis", "web_logs")
+  | where match(uri_path, "%0[aAdD]|%0[aA]%0[dD]|\r\n|\n|\r|\\x00|%00|\.\./|\.\.\\|%2e%2e|%252e|%c0%af|%c1%9c")
+     OR match(uri_query, "%0[aAdD]|%00|\\x00|<script|javascript:|vbscript:|onload=|onerror=")
+     OR len(uri_path) > 2000
+     OR len(http_user_agent) > 500
+  | eval attack_type=case(
+      match(uri_path, "%0[aAdD]|%0[aA]%0[dD]|\r\n"), "CRLF Injection",
+      match(uri_path, "%00|\\x00"), "Null Byte Injection",
+      match(uri_path, "\.\./|\.\.\\|%2e%2e|%252e|%c0%af"), "Path Traversal",
+      match(uri_query, "<script|javascript:|onload=|onerror="), "XSS Attempt",
+      len(uri_path) > 2000, "Oversized URI",
+      len(http_user_agent) > 500, "Oversized User-Agent",
+      true(), "Malformed Request"
+    )
+  | stats count as attack_count, values(uri_path) as samples by src_ip, attack_type
+  | eval rule_id="WS13", severity="HIGH", description="Malformed/poisoning request from " + src_ip + " - Type: " + attack_type
+  | table src_ip, attack_type, attack_count, samples, severity, rule_id, description

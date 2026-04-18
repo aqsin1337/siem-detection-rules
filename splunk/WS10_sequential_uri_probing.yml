@@ -1,26 +1,24 @@
-title: WS10 - Sequential URI Probing Detection
 id: ws10-sequential-uri-probing
+title: WS10 - Sequential URI Probing Detection
+description: Detects automated sequential probing of URIs with numeric or alphabetic patterns, typical of directory enumeration tools like dirbuster, gobuster, or custom scrapers.
 status: production
-description: Detects sequential directory/file enumeration (common in manual or scripted attacks)
 author: aqsin1337
-date: 2026/04/17
-modified: 2026/04/17
+date: 2025-04-18
 tags:
-  - web_server
+  - attack.discovery
+  - attack.t1083
+  - web
 severity: high
-platform: splunk
 
-splunk_query: |
-  source="http:web_logs"
-  | sort _time
-  | streamstats window=20 current=true count as seq by client_ip
-  | where seq > 15
-  | eval attack_type="WS10-Sequential URI Probing"
-  | eval severity="HIGH"
-  | table _time, client_ip, request_uri, attack_type, severity
-
-false_positives:
-  - Legitimate site crawlers
-
-response:
-  - Block and investigate
+splunk_query: >
+  index=* sourcetype IN ("access_combined", "apache_access", "nginx_access", "iis", "web_logs")
+  | where status IN ("200","301","302","403","404")
+  | bucket _time span=2m
+  | stats count as probe_count, values(uri_path) as probed_paths, dc(uri_path) as unique_paths, values(status) as status_codes by src_ip, _time
+  | where unique_paths > 30
+  | eval found_count=mvcount(mvfilter(match(status_codes, "200|301|302")))
+  | eval notfound_count=mvcount(mvfilter(match(status_codes, "404|403")))
+  | where notfound_count > 20
+  | eval discovery_ratio=round(found_count / (found_count + notfound_count) * 100, 2)
+  | eval rule_id="WS10", severity="HIGH", description="Sequential URI probing from " + src_ip + ": " + tostring(unique_paths) + " paths probed, " + tostring(found_count) + " found (" + tostring(discovery_ratio) + "%)"
+  | table _time, src_ip, probe_count, unique_paths, found_count, notfound_count, discovery_ratio, severity, rule_id, description

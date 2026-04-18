@@ -1,28 +1,25 @@
-title: WS14 - High Bandwidth Consumption per Client
 id: ws14-high-bandwidth
+title: WS14 - High Bandwidth Consumption per Client
+description: Detects individual clients consuming excessive bandwidth through repeated large file downloads, video streaming abuse, or hotlinking, which may indicate content theft, bandwidth exhaustion, or C2 data staging.
 status: production
-description: Detects clients consuming abnormal amount of bandwidth (possible exfil or scraping)
 author: aqsin1337
-date: 2026/04/17
-modified: 2026/04/17
+date: 2025-04-18
 tags:
-  - web_server
-  - bandwidth
-severity: high
-platform: splunk
+  - attack.impact
+  - attack.t1499
+  - web
+severity: medium
 
-splunk_query: |
-  source="http:web_logs"
-  | bucket _time span=10m
-  | stats sum(bytes_out) as total_bytes by _time, client_ip
-  | where total_bytes > 100000000
-  | eval attack_type="WS14-High Bandwidth Consumption"
-  | eval severity="HIGH"
-  | eval risk_score=total_bytes / 1000000
-  | table _time, client_ip, attack_type, severity, risk_score, total_bytes
-
-false_positives:
-  - Large legitimate downloads
-
-response:
-  - Rate limit + investigate
+splunk_query: >
+  index=* sourcetype IN ("access_combined", "apache_access", "nginx_access", "iis", "web_logs")
+  | where isnum(bytes) AND bytes > 1048576
+  | bucket _time span=30m
+  | stats sum(bytes) as total_bytes, count as download_count, avg(bytes) as avg_file_size, max(bytes) as largest_file, values(uri_path) as downloaded_files, dc(uri_path) as unique_files by src_ip, _time
+  | eval total_gb = round(total_bytes/1024/1024/1024, 3)
+  | eval total_mb = round(total_bytes/1024/1024, 2)
+  | where total_mb > 500
+  | eval bandwidth_risk=case(total_gb>10, "CRITICAL", total_gb>5, "HIGH", total_mb>500, "MEDIUM", true(), "LOW")
+  | eval avg_file_mb = round(avg_file_size/1024/1024, 2)
+  | eval rule_id="WS14", description="High bandwidth usage by " + src_ip + ": " + tostring(total_mb) + " MB in 30 min (" + tostring(download_count) + " downloads)"
+  | table _time, src_ip, total_mb, total_gb, download_count, unique_files, avg_file_mb, largest_file, bandwidth_risk, rule_id, description
+  | sort - total_mb

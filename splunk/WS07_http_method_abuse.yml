@@ -1,27 +1,27 @@
-title: WS07 - HTTP Method Abuse Detection
 id: ws07-http-method-abuse
+title: WS07 - HTTP Method Abuse Detection
+description: Detects usage of dangerous or unusual HTTP methods such as PUT, DELETE, TRACE, CONNECT, PATCH on sensitive paths, which may indicate REST API abuse or WebDAV exploitation attempts.
 status: production
-description: Detects abuse of dangerous HTTP methods (PUT, DELETE, TRACE, OPTIONS flood)
 author: aqsin1337
-date: 2026/04/17
-modified: 2026/04/17
+date: 2025-04-18
 tags:
-  - web_server
+  - attack.initial_access
+  - attack.t1190
+  - web
 severity: high
-platform: splunk
 
-splunk_query: |
-  source="http:web_logs"
-  | where http_method IN ("PUT", "DELETE", "TRACE", "OPTIONS", "CONNECT")
-  | bucket _time span=5m
-  | stats count by _time, client_ip, http_method
-  | where count > 15
-  | eval attack_type="WS07-HTTP Method Abuse"
-  | eval severity="HIGH"
-  | table _time, client_ip, http_method, attack_type, severity, count
-
-false_positives:
-  - Legitimate REST API usage
-
-response:
-  - Block method at WAF
+splunk_query: >
+  index=* sourcetype IN ("access_combined", "apache_access", "nginx_access", "iis", "web_logs")
+  | where method IN ("PUT", "DELETE", "TRACE", "CONNECT", "PROPFIND", "PROPPATCH", "MKCOL", "COPY", "MOVE", "LOCK", "UNLOCK", "OPTIONS")
+  | eval method_risk=case(
+      method IN ("PUT","DELETE"), "HIGH",
+      method IN ("TRACE","CONNECT"), "HIGH",
+      method IN ("PROPFIND","PROPPATCH","MKCOL","COPY","MOVE","LOCK","UNLOCK"), "MEDIUM",
+      method="OPTIONS", "LOW",
+      true(), "MEDIUM"
+    )
+  | where method_risk IN ("HIGH","MEDIUM")
+  | stats count as method_count, values(uri_path) as targets, values(method) as methods, dc(uri_path) as unique_targets by src_ip, method_risk
+  | where method_count > 5
+  | eval rule_id="WS07", severity=method_risk, description="HTTP method abuse from " + src_ip + " using methods: " + mvjoin(methods, ",")
+  | table src_ip, method_count, methods, unique_targets, targets, method_risk, rule_id, description

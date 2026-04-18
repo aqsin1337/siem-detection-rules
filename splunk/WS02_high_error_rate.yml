@@ -1,31 +1,21 @@
-title: WS02 - High Error Rate from Single Client Detection
 id: ws02-high-error-rate
+title: WS02 - High Error Rate from Single Client Detection
+description: Detects clients generating excessive HTTP 4xx/5xx error responses, which may indicate brute force attempts, vulnerability probing, or misconfigured attack tools.
 status: production
-description: Detects clients causing abnormal 4xx/5xx error rates which may indicate probing, misconfiguration exploitation or DoS attempts
 author: aqsin1337
-date: 2026/04/17
-modified: 2026/04/17
+date: 2025-04-18
 tags:
-  - web_server
-  - error_spike
-severity: high
-platform: splunk
+  - attack.discovery
+  - attack.t1190
+  - web
+severity: medium
 
-splunk_query: |
-  source="http:web_logs"
-  | where status_code >= 400
-  | bucket _time span=10m
-  | stats count as error_count, values(status_code) as error_codes by _time, client_ip
-  | where error_count > 40
-  | eval attack_type="WS02-High Error Rate"
-  | eval severity=case(error_count>100, "CRITICAL", error_count>60, "HIGH", true(), "MEDIUM")
-  | eval risk_score=error_count * 3
-  | table _time, client_ip, attack_type, severity, risk_score, error_count, error_codes
-
-false_positives:
-  - Broken links from legitimate users
-  - Misconfigured monitoring tools
-
-response:
-  - Temporary IP block
-  - Check server health and application logs
+splunk_query: >
+  index=* sourcetype IN ("access_combined", "apache_access", "nginx_access", "iis", "web_logs")
+  | where status>=400
+  | bucket _time span=5m
+  | stats count as error_count, dc(status) as error_types, values(status) as status_codes, values(uri_path) as uris by src_ip, _time
+  | where error_count > 50
+  | eval error_rate_severity=case(error_count>200, "CRITICAL", error_count>100, "HIGH", true(), "MEDIUM")
+  | eval rule_id="WS02", description="High error rate detected from " + src_ip + " with " + tostring(error_count) + " errors"
+  | table _time, src_ip, error_count, error_types, status_codes, error_rate_severity, rule_id, description

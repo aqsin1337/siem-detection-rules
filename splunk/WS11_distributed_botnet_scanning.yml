@@ -1,27 +1,23 @@
-title: WS11 - Distributed Botnet-Style Scanning Detection
 id: ws11-distributed-botnet-scan
+title: WS11 - Distributed Botnet-Style Scanning Detection
+description: Detects coordinated scanning activity from multiple IPs targeting the same URIs within a short window, characteristic of botnet-driven vulnerability scanning campaigns.
 status: production
-description: Detects scanning behavior from multiple IPs in short time (botnet / distributed attack)
 author: aqsin1337
-date: 2026/04/17
-modified: 2026/04/17
+date: 2025-04-18
 tags:
-  - web_server
-  - botnet
-severity: high
-platform: splunk
+  - attack.reconnaissance
+  - attack.t1595
+  - web
+severity: critical
 
-splunk_query: |
-  source="http:web_logs"
-  | bucket _time span=3m
-  | stats dc(client_ip) as unique_ips, count as total by _time, request_uri
-  | where unique_ips > 8 AND total > 50
-  | eval attack_type="WS11-Distributed Botnet Scan"
-  | eval severity="HIGH"
-  | table _time, request_uri, attack_type, severity, unique_ips, total
-
-false_positives:
-  - CDN or load balancer traffic
-
-response:
-  - Add IPs to blocklist
+splunk_query: >
+  index=* sourcetype IN ("access_combined", "apache_access", "nginx_access", "iis", "web_logs")
+  | where status IN ("200","400","401","403","404","500")
+  | bucket _time span=5m
+  | stats dc(src_ip) as unique_ips, count as total_hits, values(src_ip) as source_ips by uri_path, _time
+  | where unique_ips > 20 AND total_hits > 50
+  | eval botnet_score=round((unique_ips * total_hits) / 100, 2)
+  | where botnet_score > 10
+  | eval rule_id="WS11", severity="CRITICAL", description="Botnet-style distributed scan targeting: " + uri_path + " from " + tostring(unique_ips) + " unique IPs (score: " + tostring(botnet_score) + ")"
+  | table _time, uri_path, unique_ips, total_hits, botnet_score, source_ips, severity, rule_id, description
+  | sort - botnet_score
