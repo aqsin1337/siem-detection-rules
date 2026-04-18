@@ -1,25 +1,25 @@
 id: ws14-high-bandwidth
-title: WS14 - High Bandwidth Consumption per Client
-description: Detects individual clients consuming excessive bandwidth through repeated large file downloads, video streaming abuse, or hotlinking, which may indicate content theft, bandwidth exhaustion, or C2 data staging.
+title: WS14 - High Bandwidth Consumption per Client Detection
+description: Detects single clients consuming excessive bandwidth from nginx raw logs
 status: production
 author: aqsin1337
-date: 2025-04-18
+date: 2026-04-18
 tags:
   - attack.impact
   - attack.t1499
-  - web
 severity: medium
 
 splunk_query: >
-  index=* sourcetype IN ("access_combined", "apache_access", "nginx_access", "iis", "web_logs")
-  | where isnum(bytes) AND bytes > 1048576
+  index=web_logs sourcetype=_json
+  | rex field=line "^(?P<src_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<method>\w+)\s+(?P<uri_path>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status>\d+)\s+(?P<bytes>\d+)"
+  | where isnotnull(src_ip) AND isnotnull(bytes)
+  | eval bytes=tonumber(bytes)
+  | where bytes > 102400
   | bucket _time span=30m
-  | stats sum(bytes) as total_bytes, count as download_count, avg(bytes) as avg_file_size, max(bytes) as largest_file, values(uri_path) as downloaded_files, dc(uri_path) as unique_files by src_ip, _time
-  | eval total_gb = round(total_bytes/1024/1024/1024, 3)
-  | eval total_mb = round(total_bytes/1024/1024, 2)
-  | where total_mb > 500
-  | eval bandwidth_risk=case(total_gb>10, "CRITICAL", total_gb>5, "HIGH", total_mb>500, "MEDIUM", true(), "LOW")
-  | eval avg_file_mb = round(avg_file_size/1024/1024, 2)
-  | eval rule_id="WS14", description="High bandwidth usage by " + src_ip + ": " + tostring(total_mb) + " MB in 30 min (" + tostring(download_count) + " downloads)"
-  | table _time, src_ip, total_mb, total_gb, download_count, unique_files, avg_file_mb, largest_file, bandwidth_risk, rule_id, description
+  | stats sum(bytes) as total_bytes, count as dl_count, max(bytes) as max_file, dc(uri_path) as unique_files, values(uri_path) as files by src_ip, _time
+  | eval total_mb=round(total_bytes/1024/1024,2)
+  | where total_mb > 200
+  | eval risk=case(total_mb>2000,"CRITICAL", total_mb>1000,"HIGH", total_mb>200,"MEDIUM", true(),"LOW")
+  | eval rule_id="WS14", severity=risk, description=src_ip + " used " + tostring(total_mb) + " MB in 30 min (" + tostring(dl_count) + " requests)"
+  | table _time, src_ip, total_mb, dl_count, unique_files, max_file, risk, files, rule_id, description
   | sort - total_mb

@@ -1,23 +1,23 @@
 id: ws08-server-error-spike
 title: WS08 - Server Error Spike Detection
-description: Detects sudden spikes in HTTP 5xx server errors which may indicate exploitation attempts causing application crashes, server overload, or successful injection attacks triggering errors.
+description: Detects sudden spikes in HTTP 5xx server errors from nginx raw logs
 status: production
 author: aqsin1337
-date: 2025-04-18
+date: 2026-04-18
 tags:
   - attack.impact
   - attack.t1499.004
-  - web
 severity: high
 
 splunk_query: >
-  index=* sourcetype IN ("access_combined", "apache_access", "nginx_access", "iis", "web_logs")
-  | where status>=500
+  index=web_logs sourcetype=_json
+  | rex field=line "^(?P<src_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<method>\w+)\s+(?P<uri_path>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status>\d+)"
+  | where isnotnull(status) AND status>=500
   | bucket _time span=5m
-  | stats count as error_500_count, dc(src_ip) as unique_clients, dc(uri_path) as unique_paths, values(status) as error_codes, values(uri_path) as affected_paths by _time
-  | eventstats avg(error_500_count) as avg_errors, stdev(error_500_count) as stdev_errors
-  | eval spike_threshold = avg_errors + (2 * stdev_errors)
-  | where error_500_count > spike_threshold AND error_500_count > 20
-  | eval spike_ratio = round(error_500_count / avg_errors, 2)
-  | eval rule_id="WS08", severity="HIGH", description="Server error spike detected: " + tostring(error_500_count) + " errors (" + tostring(spike_ratio) + "x above normal)"
-  | table _time, error_500_count, avg_errors, spike_ratio, unique_clients, unique_paths, error_codes, severity, rule_id, description
+  | stats count as err_count, dc(src_ip) as unique_ips, dc(uri_path) as unique_paths, values(status) as codes by _time
+  | eventstats avg(err_count) as avg_err, stdev(err_count) as stdev_err
+  | eval spike_threshold=avg_err+(2*stdev_err)
+  | where err_count > spike_threshold AND err_count > 10
+  | eval spike_ratio=round(err_count/avg_err,2)
+  | eval rule_id="WS08", severity="HIGH", description="5xx spike: " + tostring(err_count) + " errors (" + tostring(spike_ratio) + "x above normal)"
+  | table _time, err_count, avg_err, spike_ratio, unique_ips, unique_paths, codes, severity, rule_id, description

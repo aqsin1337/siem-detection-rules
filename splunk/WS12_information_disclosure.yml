@@ -1,27 +1,26 @@
 id: ws12-info-disclosure
-title: WS12 - Information Disclosure and Credential Harvesting Attempt
-description: Detects attempts to access sensitive files and endpoints that may expose configuration data, credentials, source code, or internal system information.
+title: WS12 - Sensitive File Access / Information Disclosure Detection
+description: Detects successful access to sensitive config/credential files from nginx raw logs
 status: production
 author: aqsin1337
-date: 2025-04-18
+date: 2026-04-18
 tags:
   - attack.discovery
   - attack.t1552
-  - web
 severity: critical
 
 splunk_query: >
-  index=* sourcetype IN ("access_combined", "apache_access", "nginx_access", "iis", "web_logs")
-  | where status IN ("200","206")
-  | where match(lower(uri_path), "\.env$|\.git/config|\.svn/|wp-config\.php|config\.php|database\.yml|settings\.py|application\.properties|\.htpasswd|\.htaccess|/etc/passwd|/etc/shadow|id_rsa|authorized_keys|\.pem$|\.key$|\.p12$|\.pfx$|backup\.sql|dump\.sql|\.bak$|web\.config|appsettings\.json|secrets\.yml|credentials\.json|\.aws/credentials|\.ssh/|phpinfo\.php|server-status|server-info|/actuator/|/api/swagger|/api/docs|debug=true")
-  | eval file_category=case(
-      match(lower(uri_path), "\.env|config|settings|application\.properties"), "Config File",
-      match(lower(uri_path), "passwd|shadow|htpasswd|credentials|id_rsa|\.pem|\.key"), "Credentials",
-      match(lower(uri_path), "\.sql|backup|dump"), "Database Backup",
-      match(lower(uri_path), "\.git|\.svn"), "Source Code",
-      match(lower(uri_path), "phpinfo|server-status|actuator|swagger"), "System Info",
-      true(), "Sensitive File"
-    )
-  | stats count as access_count, values(uri_path) as accessed_files by src_ip, file_category
-  | eval rule_id="WS12", severity="CRITICAL", description="Sensitive file accessed by " + src_ip + " - Category: " + file_category
-  | table src_ip, file_category, access_count, accessed_files, severity, rule_id, description
+  index=web_logs sourcetype=_json
+  | rex field=line "^(?P<src_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<method>\w+)\s+(?P<uri_path>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status>\d+)"
+  | where isnotnull(src_ip) AND status IN ("200","206")
+  | where match(lower(uri_path), "\.env|wp-config|config\.php|database\.yml|settings\.py|\.htpasswd|/etc/passwd|id_rsa|\.pem|\.key|backup\.sql|dump\.sql|\.bak|web\.config|appsettings|phpinfo|server-status|\.git/config|\.svn/entries|credentials|secrets")
+  | eval category=case(
+      match(lower(uri_path),"\.env|config|settings|appsettings|web\.config"),"Config File",
+      match(lower(uri_path),"passwd|htpasswd|credentials|id_rsa|\.pem|\.key|secrets"),"Credentials",
+      match(lower(uri_path),"\.sql|backup|dump|\.bak"),"DB Backup",
+      match(lower(uri_path),"\.git|\.svn"),"Source Code",
+      match(lower(uri_path),"phpinfo|server-status"),"System Info",
+      true(),"Sensitive File")
+  | stats count as access_count, values(uri_path) as files by src_ip, category
+  | eval rule_id="WS12", severity="CRITICAL", description="Sensitive file accessed by " + src_ip + " [" + category + "]"
+  | table src_ip, category, access_count, files, severity, rule_id, description

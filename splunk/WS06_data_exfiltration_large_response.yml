@@ -1,23 +1,25 @@
 id: ws06-data-exfiltration
 title: WS06 - Potential Data Exfiltration via Large HTTP Response
-description: Detects unusually large HTTP responses that may indicate data exfiltration, unauthorized database dumps, or mass file downloads by a single client.
+description: Detects unusually large total data transfer from a single IP using nginx raw logs
 status: production
 author: aqsin1337
-date: 2025-04-18
+date: 2026-04-18
 tags:
   - attack.exfiltration
   - attack.t1048
-  - web
 severity: high
 
 splunk_query: >
-  index=* sourcetype IN ("access_combined", "apache_access", "nginx_access", "iis", "web_logs")
-  | where isnum(bytes) AND bytes > 0
+  index=web_logs sourcetype=_json
+  | rex field=line "^(?P<src_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<method>\w+)\s+(?P<uri_path>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status>\d+)\s+(?P<bytes>\d+)"
+  | where isnotnull(src_ip) AND isnotnull(bytes)
+  | eval bytes=tonumber(bytes)
+  | where bytes > 0
   | bucket _time span=10m
-  | stats sum(bytes) as total_bytes, count as request_count, avg(bytes) as avg_bytes, max(bytes) as max_single_response, values(uri_path) as accessed_paths by src_ip, _time
-  | eval total_mb = round(total_bytes/1024/1024, 2)
-  | where total_mb > 100
-  | eval exfil_risk=case(total_mb>1000, "CRITICAL", total_mb>500, "HIGH", total_mb>100, "MEDIUM", true(), "LOW")
-  | eval rule_id="WS06", description="Large data transfer detected: " + src_ip + " downloaded " + tostring(total_mb) + " MB in 10 minutes"
-  | table _time, src_ip, total_mb, request_count, max_single_response, exfil_risk, accessed_paths, rule_id, description
+  | stats sum(bytes) as total_bytes, count as req_count, max(bytes) as max_resp, values(uri_path) as paths by src_ip, _time
+  | eval total_mb=round(total_bytes/1024/1024,2)
+  | where total_mb > 50
+  | eval risk=case(total_mb>500,"CRITICAL", total_mb>200,"HIGH", true(),"MEDIUM")
+  | eval rule_id="WS06", severity=risk, description=src_ip + " downloaded " + tostring(total_mb) + " MB in 10 min"
+  | table _time, src_ip, total_mb, req_count, max_resp, risk, paths, rule_id, description
   | sort - total_mb

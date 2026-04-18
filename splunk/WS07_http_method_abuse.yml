@@ -1,27 +1,21 @@
 id: ws07-http-method-abuse
 title: WS07 - HTTP Method Abuse Detection
-description: Detects usage of dangerous or unusual HTTP methods such as PUT, DELETE, TRACE, CONNECT, PATCH on sensitive paths, which may indicate REST API abuse or WebDAV exploitation attempts.
+description: Detects dangerous HTTP methods (PUT, DELETE, TRACE, etc.) from nginx raw logs
 status: production
 author: aqsin1337
-date: 2025-04-18
+date: 2026-04-18
 tags:
   - attack.initial_access
   - attack.t1190
-  - web
 severity: high
 
 splunk_query: >
-  index=* sourcetype IN ("access_combined", "apache_access", "nginx_access", "iis", "web_logs")
-  | where method IN ("PUT", "DELETE", "TRACE", "CONNECT", "PROPFIND", "PROPPATCH", "MKCOL", "COPY", "MOVE", "LOCK", "UNLOCK", "OPTIONS")
-  | eval method_risk=case(
-      method IN ("PUT","DELETE"), "HIGH",
-      method IN ("TRACE","CONNECT"), "HIGH",
-      method IN ("PROPFIND","PROPPATCH","MKCOL","COPY","MOVE","LOCK","UNLOCK"), "MEDIUM",
-      method="OPTIONS", "LOW",
-      true(), "MEDIUM"
-    )
-  | where method_risk IN ("HIGH","MEDIUM")
-  | stats count as method_count, values(uri_path) as targets, values(method) as methods, dc(uri_path) as unique_targets by src_ip, method_risk
-  | where method_count > 5
-  | eval rule_id="WS07", severity=method_risk, description="HTTP method abuse from " + src_ip + " using methods: " + mvjoin(methods, ",")
-  | table src_ip, method_count, methods, unique_targets, targets, method_risk, rule_id, description
+  index=web_logs sourcetype=_json
+  | rex field=line "^(?P<src_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<method>\w+)\s+(?P<uri_path>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status>\d+)"
+  | where isnotnull(src_ip)
+  | where method IN ("PUT","DELETE","TRACE","CONNECT","PROPFIND","PROPPATCH","MKCOL","COPY","MOVE","LOCK","UNLOCK")
+  | eval risk=case(method IN ("PUT","DELETE","TRACE","CONNECT"),"HIGH", true(),"MEDIUM")
+  | stats count as method_count, values(method) as methods, dc(uri_path) as unique_targets, values(uri_path) as targets by src_ip, risk
+  | where method_count > 3
+  | eval rule_id="WS07", severity=risk, description="HTTP method abuse from " + src_ip + ": " + mvjoin(methods,",")
+  | table src_ip, method_count, methods, unique_targets, targets, risk, rule_id, description

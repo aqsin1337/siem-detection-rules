@@ -1,37 +1,34 @@
 id: ws15-web-auth-brute-force
 title: WS15 - Rapid Web Authentication Brute Force Detection
-description: Detects rapid repeated authentication failures against login endpoints, indicating brute force or credential stuffing attacks against web application authentication mechanisms.
+description: Detects brute force and credential stuffing attacks against login endpoints from nginx raw logs
 status: production
 author: aqsin1337
-date: 2025-04-18
+date: 2026-04-18
 tags:
   - attack.credential_access
   - attack.t1110.001
   - attack.t1110.004
-  - web
 severity: critical
 
 splunk_query: >
-  index=* sourcetype IN ("access_combined", "apache_access", "nginx_access", "iis", "web_logs")
-  | where method="POST"
-  | where match(lower(uri_path), "login|signin|auth|session|token|oauth|sso|wp-login|admin/login|user/login|account/login|api/auth|api/login|api/token")
-  | where status IN ("200","401","403","302")
+  index=web_logs sourcetype=_json
+  | rex field=line "^(?P<src_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<method>\w+)\s+(?P<uri_path>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status>\d+)"
+  | where isnotnull(src_ip) AND method="POST"
+  | where match(lower(uri_path),"login|signin|auth|session|token|wp-login|admin/login|user/login|api/auth|api/login|api/token")
   | bucket _time span=5m
-  | stats count as total_attempts,
-      sum(eval(if(status IN ("401","403"), 1, 0))) as failed_attempts,
-      sum(eval(if(status IN ("200","302"), 1, 0))) as success_attempts,
-      dc(uri_path) as targeted_endpoints,
-      values(uri_path) as endpoints,
-      values(status) as response_codes
+  | stats count as total,
+      sum(eval(if(status IN ("401","403"),1,0))) as failed,
+      sum(eval(if(status IN ("200","302"),1,0))) as success,
+      dc(uri_path) as endpoints,
+      values(uri_path) as endpoint_list
       by src_ip, _time
-  | where failed_attempts > 20
-  | eval success_rate=round(success_attempts / total_attempts * 100, 2)
+  | where failed > 15
+  | eval success_rate=round(success/(failed+success)*100,1)
   | eval attack_type=case(
-      success_rate > 5 AND success_attempts > 3, "Credential Stuffing (Partial Success)",
-      failed_attempts > 100, "High-Speed Brute Force",
-      targeted_endpoints > 3, "Multi-Endpoint Brute Force",
-      true(), "Brute Force Attack"
-    )
-  | eval rule_id="WS15", severity="CRITICAL", description=attack_type + " from " + src_ip + ": " + tostring(failed_attempts) + " fails, " + tostring(success_attempts) + " success (" + tostring(success_rate) + "% success rate)"
-  | table _time, src_ip, total_attempts, failed_attempts, success_attempts, success_rate, attack_type, targeted_endpoints, endpoints, severity, rule_id, description
-  | sort - failed_attempts
+      success_rate>5 AND success>2,"Credential Stuffing (SUCCESS!)",
+      failed>100,"High-Speed Brute Force",
+      endpoints>3,"Multi-Endpoint Attack",
+      true(),"Brute Force")
+  | eval rule_id="WS15", severity="CRITICAL", description=attack_type + " from " + src_ip + ": " + tostring(failed) + " fails / " + tostring(success) + " success"
+  | table _time, src_ip, total, failed, success, success_rate, attack_type, endpoints, endpoint_list, severity, rule_id, description
+  | sort - failed

@@ -1,21 +1,21 @@
 id: ws02-high-error-rate
 title: WS02 - High Error Rate from Single Client Detection
-description: Detects clients generating excessive HTTP 4xx/5xx error responses, which may indicate brute force attempts, vulnerability probing, or misconfigured attack tools.
+description: Detects clients generating excessive HTTP 4xx/5xx errors from nginx raw logs
 status: production
 author: aqsin1337
-date: 2025-04-18
+date: 2026-04-18
 tags:
   - attack.discovery
   - attack.t1190
-  - web
 severity: medium
 
 splunk_query: >
-  index=* sourcetype IN ("access_combined", "apache_access", "nginx_access", "iis", "web_logs")
-  | where status>=400
+  index=web_logs sourcetype=_json
+  | rex field=line "^(?P<src_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<method>\w+)\s+(?P<uri_path>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status>\d+)"
+  | where isnotnull(src_ip) AND status>=400
   | bucket _time span=5m
-  | stats count as error_count, dc(status) as error_types, values(status) as status_codes, values(uri_path) as uris by src_ip, _time
-  | where error_count > 50
-  | eval error_rate_severity=case(error_count>200, "CRITICAL", error_count>100, "HIGH", true(), "MEDIUM")
-  | eval rule_id="WS02", description="High error rate detected from " + src_ip + " with " + tostring(error_count) + " errors"
-  | table _time, src_ip, error_count, error_types, status_codes, error_rate_severity, rule_id, description
+  | stats count as error_count, dc(status) as error_types, values(status) as status_codes, dc(uri_path) as unique_uris by src_ip, _time
+  | where error_count > 20
+  | eval severity=case(error_count>100,"CRITICAL", error_count>50,"HIGH", true(),"MEDIUM")
+  | eval rule_id="WS02", description="High error rate from " + src_ip + ": " + tostring(error_count) + " errors in 5 min"
+  | table _time, src_ip, error_count, error_types, status_codes, unique_uris, severity, rule_id, description

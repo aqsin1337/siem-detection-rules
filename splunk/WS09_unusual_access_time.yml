@@ -1,22 +1,23 @@
 id: ws09-unusual-access-time
-title: WS09 - Unusual Off-Hours Web Access Detection
-description: Detects high-volume web access during unusual hours (00:00-06:00) targeting sensitive paths, which may indicate automated attacks, unauthorized access, or insider threats operating outside business hours.
+title: WS09 - Unusual Off-Hours Access to Sensitive Paths
+description: Detects access to admin/config paths during off-hours (00:00-06:00) from nginx raw logs
 status: production
 author: aqsin1337
-date: 2025-04-18
+date: 2026-04-18
 tags:
   - attack.discovery
   - attack.t1078
-  - web
 severity: medium
 
 splunk_query: >
-  index=* sourcetype IN ("access_combined", "apache_access", "nginx_access", "iis", "web_logs")
-  | eval hour=tonumber(strftime(_time, "%H"))
-  | where hour >= 0 AND hour <= 5
-  | where match(lower(uri_path), "admin|login|config|setup|install|backup|database|db|passwd|shadow|credentials|api/v[0-9]|\.env|\.git|wp-admin|phpmyadmin|manager|console")
+  index=web_logs sourcetype=_json
+  | rex field=line "^(?P<src_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<method>\w+)\s+(?P<uri_path>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status>\d+)"
+  | where isnotnull(src_ip)
+  | eval hour=tonumber(strftime(_time,"%H"))
+  | where hour>=0 AND hour<=5
+  | where match(lower(uri_path),"admin|login|config|setup|install|backup|\.env|wp-admin|phpmyadmin|manager|console|passwd|credentials|api/v")
   | bucket _time span=1h
-  | stats count as access_count, dc(uri_path) as unique_paths, values(uri_path) as sensitive_paths, dc(src_ip) as unique_ips, values(src_ip) as source_ips by _time, hour
-  | where access_count > 10
-  | eval rule_id="WS09", severity="MEDIUM", description="Off-hours access to sensitive paths at hour " + tostring(hour) + ":00 - " + tostring(access_count) + " requests from " + tostring(unique_ips) + " IPs"
-  | table _time, hour, access_count, unique_paths, sensitive_paths, unique_ips, source_ips, severity, rule_id, description
+  | stats count as access_count, dc(src_ip) as unique_ips, dc(uri_path) as unique_paths, values(uri_path) as sensitive_paths, values(src_ip) as source_ips by _time, hour
+  | where access_count > 5
+  | eval rule_id="WS09", severity="MEDIUM", description="Off-hours sensitive access at " + tostring(hour) + ":00 - " + tostring(access_count) + " requests"
+  | table _time, hour, access_count, unique_ips, unique_paths, sensitive_paths, source_ips, severity, rule_id, description

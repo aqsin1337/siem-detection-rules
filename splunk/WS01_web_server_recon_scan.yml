@@ -1,19 +1,20 @@
 id: ws01-web-server-recon-scan
 title: WS01 - Web Server Reconnaissance Scanning Detection
-description: Detects high volume of requests from a single IP targeting multiple unique URIs within a short time window, indicating automated reconnaissance or vulnerability scanning activity.
+description: Detects high volume of requests from a single IP targeting multiple unique URIs - nginx raw log format
 status: production
 author: aqsin1337
-date: 2025-04-18
+date: 2026-04-18
 tags:
   - attack.reconnaissance
   - attack.t1595
-  - web
 severity: high
 
 splunk_query: >
-  index=* sourcetype IN ("access_combined", "apache_access", "nginx_access", "iis", "web_logs")
+  index=web_logs sourcetype=_json
+  | rex field=line "^(?P<src_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<method>\w+)\s+(?P<uri_path>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status>\d+)\s+(?P<bytes>\d+|-)"
+  | where isnotnull(src_ip)
   | bucket _time span=5m
-  | stats dc(uri_path) as unique_uris, count as total_requests, values(uri_path) as paths by src_ip, _time
-  | where unique_uris > 50 AND total_requests > 100
-  | eval severity="HIGH", rule_id="WS01", description="Reconnaissance scanning detected from " + src_ip
+  | stats dc(uri_path) as unique_uris, count as total_requests by src_ip, _time
+  | where unique_uris > 30 AND total_requests > 50
+  | eval rule_id="WS01", severity="HIGH", description="Recon scan from " + src_ip + " - " + tostring(unique_uris) + " unique URIs in 5 min"
   | table _time, src_ip, unique_uris, total_requests, severity, rule_id, description
