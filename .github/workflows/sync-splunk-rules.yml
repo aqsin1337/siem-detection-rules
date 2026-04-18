@@ -42,7 +42,7 @@ jobs:
               print("XETA: Secrets tapilmadi! SPLUNK_HOST, SPLUNK_USERNAME, SPLUNK_PASSWORD lazimdir.")
               sys.exit(1)
 
-          base_url = f"http://{host}/servicesNS/nobody/search/saved/searches"
+          base_url = f"https://{host}/servicesNS/nobody/search/saved/searches"
           auth = (user, pwd)
 
           files = sorted(glob.glob('splunk/WS*.yml'))
