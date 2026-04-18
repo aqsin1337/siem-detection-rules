@@ -1,34 +1,4 @@
 id: ws15-web-auth-brute-force
 title: WS15 - Rapid Web Authentication Brute Force Detection
-description: Detects brute force and credential stuffing attacks against login endpoints from nginx raw logs
 status: production
-author: aqsin1337
-date: 2026-04-18
-tags:
-  - attack.credential_access
-  - attack.t1110.001
-  - attack.t1110.004
-severity: critical
-
-splunk_query: >
-  index=web_logs sourcetype=_json
-  | rex field=line "^(?P<src_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<method>\w+)\s+(?P<uri_path>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status>\d+)"
-  | where isnotnull(src_ip) AND method="POST"
-  | where match(lower(uri_path),"login|signin|auth|session|token|wp-login|admin/login|user/login|api/auth|api/login|api/token")
-  | bucket _time span=5m
-  | stats count as total,
-      sum(eval(if(status IN ("401","403"),1,0))) as failed,
-      sum(eval(if(status IN ("200","302"),1,0))) as success,
-      dc(uri_path) as endpoints,
-      values(uri_path) as endpoint_list
-      by src_ip, _time
-  | where failed > 15
-  | eval success_rate=round(success/(failed+success)*100,1)
-  | eval attack_type=case(
-      success_rate>5 AND success>2,"Credential Stuffing (SUCCESS!)",
-      failed>100,"High-Speed Brute Force",
-      endpoints>3,"Multi-Endpoint Attack",
-      true(),"Brute Force")
-  | eval rule_id="WS15", severity="CRITICAL", description=attack_type + " from " + src_ip + ": " + tostring(failed) + " fails / " + tostring(success) + " success"
-  | table _time, src_ip, total, failed, success, success_rate, attack_type, endpoints, endpoint_list, severity, rule_id, description
-  | sort - failed
+splunk_query: index=web_logs sourcetype=_json | rex field=line "^(?P<client_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<http_method>\w+)\s+(?P<request_uri>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status_code>\d+)\s+(?P<bytes>\d+|-)" | where isnotnull(client_ip) AND http_method="POST" | where match(lower(request_uri),"login|signin|auth|session|token|wp-login|admin/login|user/login|api/auth|api/login|api/token") | bucket _time span=5m | stats count as total, sum(eval(if(status_code IN ("401","403"),1,0))) as failed, sum(eval(if(status_code IN ("200","302"),1,0))) as success, dc(request_uri) as endpoints, values(request_uri) as endpoint_list by client_ip, _time | where failed > 5 | eval success_rate=round(success/(failed+success+0.001)*100,1), attack_type=case(success_rate>5 AND success>2,"Credential Stuffing (SUCCESS!)",failed>100,"High-Speed Brute Force",endpoints>3,"Multi-Endpoint Attack",true(),"Brute Force"), rule_id="WS15", severity="CRITICAL", description=attack_type + " from " + client_ip + ": " + tostring(failed) + " fails / " + tostring(success) + " success" | table _time, client_ip, total, failed, success, success_rate, attack_type, endpoints, endpoint_list, severity, rule_id, description | sort - failed

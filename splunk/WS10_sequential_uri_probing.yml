@@ -1,24 +1,4 @@
 id: ws10-sequential-uri-probing
 title: WS10 - Sequential URI Probing / Directory Enumeration Detection
-description: Detects directory enumeration tools probing many paths in short time from nginx raw logs
 status: production
-author: aqsin1337
-date: 2026-04-18
-tags:
-  - attack.discovery
-  - attack.t1083
-severity: high
-
-splunk_query: >
-  index=web_logs sourcetype=_json
-  | rex field=line "^(?P<src_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<method>\w+)\s+(?P<uri_path>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status>\d+)"
-  | where isnotnull(src_ip)
-  | bucket _time span=2m
-  | stats count as total, dc(uri_path) as unique_paths,
-      sum(eval(if(status="404",1,0))) as not_found,
-      sum(eval(if(status IN ("200","301","302"),1,0))) as found
-      by src_ip, _time
-  | where unique_paths > 20 AND not_found > 15
-  | eval found_rate=round(found/(found+not_found)*100,1)
-  | eval rule_id="WS10", severity="HIGH", description="Dir enumeration from " + src_ip + ": " + tostring(unique_paths) + " paths, " + tostring(not_found) + " 404s"
-  | table _time, src_ip, total, unique_paths, found, not_found, found_rate, severity, rule_id, description
+splunk_query: index=web_logs sourcetype=_json | rex field=line "^(?P<client_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<http_method>\w+)\s+(?P<request_uri>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status_code>\d+)\s+(?P<bytes>\d+|-)" | where isnotnull(client_ip) | bucket _time span=2m | stats count as total, dc(request_uri) as unique_paths, sum(eval(if(status_code="404",1,0))) as not_found, sum(eval(if(status_code IN ("200","301","302"),1,0))) as found by client_ip, _time | where unique_paths > 10 AND not_found > 8 | eval found_rate=round(found/(found+not_found+0.001)*100,1), rule_id="WS10", severity="HIGH", description="Dir enumeration from " + client_ip + ": " + tostring(unique_paths) + " paths, " + tostring(not_found) + " 404s" | table _time, client_ip, total, unique_paths, found, not_found, found_rate, severity, rule_id, description

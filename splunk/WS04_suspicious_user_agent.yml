@@ -1,25 +1,4 @@
 id: ws04-suspicious-user-agent
 title: WS04 - Suspicious User-Agent Detection
-description: Detects known attack tool user-agents in nginx raw logs (sqlmap, nikto, nmap, etc.)
 status: production
-author: aqsin1337
-date: 2026-04-18
-tags:
-  - attack.discovery
-  - attack.t1595.002
-severity: high
-
-splunk_query: >
-  index=web_logs sourcetype=_json
-  | rex field=line "^(?P<src_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<method>\w+)\s+(?P<uri_path>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status>\d+)\s+(?P<bytes>\d+|-)\s+\"(?P<referer>[^\"]*)\"\s+\"(?P<user_agent>[^\"]+)\""
-  | where isnotnull(src_ip)
-  | where match(lower(user_agent), "sqlmap|nikto|nmap|masscan|nuclei|dirbuster|gobuster|wfuzz|hydra|metasploit|python-requests/2\.[01]\.|curl/7\.[0-3]\.|wget/1\.1[0-2]\.|libwww-perl|acunetix|burpsuite|w3af|openvas|nessus|havij|pangolin|zgrab|scanbot")
-  | eval tool=case(
-      match(lower(user_agent),"sqlmap|havij|pangolin"),"SQL Injection Tool",
-      match(lower(user_agent),"nikto|acunetix|w3af|openvas|nessus"),"Web Scanner",
-      match(lower(user_agent),"dirbuster|gobuster|wfuzz"),"Dir Brute Force",
-      match(lower(user_agent),"metasploit|hydra"),"Exploit/Brute Tool",
-      true(),"Suspicious Tool")
-  | stats count as hits, dc(uri_path) as targets, values(uri_path) as paths by src_ip, tool, user_agent
-  | eval rule_id="WS04", severity="HIGH", description="Attack tool detected from " + src_ip + ": " + tool
-  | table src_ip, tool, hits, targets, paths, user_agent, severity, rule_id, description
+splunk_query: index=web_logs sourcetype=_json | rex field=line "^(?P<client_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<http_method>\w+)\s+(?P<request_uri>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status_code>\d+)\s+(?P<bytes>\d+|-)\s+\"(?P<referer>[^\"]*)\"\s+\"(?P<user_agent>[^\"]+)\"" | where isnotnull(client_ip) | where match(lower(user_agent),"sqlmap|nikto|nmap|masscan|nuclei|dirbuster|gobuster|wfuzz|hydra|metasploit|libwww-perl|acunetix|burpsuite|w3af|openvas|nessus|havij|zgrab|scanbot") | eval tool=case(match(lower(user_agent),"sqlmap|havij"),"SQL Injection Tool",match(lower(user_agent),"nikto|acunetix|w3af|openvas|nessus"),"Web Scanner",match(lower(user_agent),"dirbuster|gobuster|wfuzz"),"Dir Brute Force",match(lower(user_agent),"metasploit|hydra"),"Exploit Tool",true(),"Suspicious Tool") | stats count as hits, dc(request_uri) as targets, values(request_uri) as paths by client_ip, tool, user_agent | eval rule_id="WS04", severity="HIGH", description="Attack tool from " + client_ip + ": " + tool | table client_ip, tool, hits, targets, paths, user_agent, severity, rule_id, description

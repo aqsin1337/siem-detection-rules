@@ -1,28 +1,4 @@
 id: ws13-log-poisoning
-title: WS13 - Malformed Request / Log Poisoning / Path Traversal Detection
-description: Detects CRLF injection, null bytes, path traversal and oversized URIs from nginx raw logs
+title: WS13 - Malformed Request / Path Traversal / Injection Detection
 status: production
-author: aqsin1337
-date: 2026-04-18
-tags:
-  - attack.defense_evasion
-  - attack.t1027
-severity: high
-
-splunk_query: >
-  index=web_logs sourcetype=_json
-  | rex field=line "^(?P<src_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<method>\w+)\s+(?P<uri_path>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status>\d+)"
-  | where isnotnull(src_ip)
-  | where match(uri_path, "%0[aAdD]|%00|%2e%2e|%252e|\.\.\/|\.\.\\|%c0%af|%c1%9c")
-     OR match(uri_path, "<script|javascript:|onload=|onerror=|alert\(")
-     OR len(uri_path) > 1500
-  | eval attack_type=case(
-      match(uri_path,"%0[aAdD]"),"CRLF Injection",
-      match(uri_path,"%00"),"Null Byte Injection",
-      match(uri_path,"%2e%2e|%252e|\.\./|\.\.\\|%c0%af"),"Path Traversal",
-      match(uri_path,"<script|javascript:|onload=|onerror="),"XSS Attempt",
-      len(uri_path)>1500,"Oversized URI",
-      true(),"Malformed Request")
-  | stats count as attack_count, values(uri_path) as samples by src_ip, attack_type
-  | eval rule_id="WS13", severity="HIGH", description="Attack from " + src_ip + ": " + attack_type
-  | table src_ip, attack_type, attack_count, samples, severity, rule_id, description
+splunk_query: index=web_logs sourcetype=_json | rex field=line "^(?P<client_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<http_method>\w+)\s+(?P<request_uri>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status_code>\d+)\s+(?P<bytes>\d+|-)" | where isnotnull(client_ip) | where match(request_uri,"%0[aAdD]|%00|%2e%2e|%252e|\.\./|\.\.\\\\|%c0%af") OR match(request_uri,"<script|javascript:|onload=|onerror=|alert\(") OR len(request_uri) > 500 | eval attack_type=case(match(request_uri,"%0[aAdD]"),"CRLF Injection",match(request_uri,"%00"),"Null Byte Injection",match(request_uri,"%2e%2e|%252e|\.\./|\.\.\\\\|%c0%af"),"Path Traversal",match(request_uri,"<script|javascript:|onload=|onerror="),"XSS Attempt",len(request_uri)>500,"Oversized URI",true(),"Malformed Request") | stats count as attack_count, values(request_uri) as samples by client_ip, attack_type | eval rule_id="WS13", severity="HIGH", description="Attack from " + client_ip + ": " + attack_type | table client_ip, attack_type, attack_count, samples, severity, rule_id, description

@@ -1,22 +1,4 @@
 id: ws05-web-shell-upload
 title: WS05 - Web Shell Upload Attempt Detection
-description: Detects POST requests uploading executable files to web server from nginx raw logs
 status: production
-author: aqsin1337
-date: 2026-04-18
-tags:
-  - attack.persistence
-  - attack.t1505.003
-severity: critical
-
-splunk_query: >
-  index=web_logs sourcetype=_json
-  | rex field=line "^(?P<src_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<method>\w+)\s+(?P<uri_path>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status>\d+)"
-  | where isnotnull(src_ip) AND method="POST" AND status IN ("200","201")
-  | where match(lower(uri_path), "\.(php|phtml|phar|asp|aspx|jsp|cfm|cgi|pl|py|sh|exe)(\?|$)")
-     OR match(lower(uri_path), "upload|fileupload|file_upload|shell|cmd|webshell")
-  | eval ext=lower(replace(uri_path, ".*\.(\w+)(\?.*)?$", "\1"))
-  | eval risk=case(match(ext,"php|asp|aspx|jsp|phar"),"CRITICAL", match(ext,"py|sh|pl|cgi|cfm"),"HIGH", true(),"MEDIUM")
-  | stats count as upload_count, values(uri_path) as paths by src_ip, risk
-  | eval rule_id="WS05", severity=risk, description="Web shell upload attempt from " + src_ip
-  | table src_ip, upload_count, paths, risk, rule_id, description
+splunk_query: index=web_logs sourcetype=_json | rex field=line "^(?P<client_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<http_method>\w+)\s+(?P<request_uri>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status_code>\d+)\s+(?P<bytes>\d+|-)" | where isnotnull(client_ip) AND http_method="POST" AND status_code IN ("200","201") | where match(lower(request_uri),"\.(php|phtml|phar|asp|aspx|jsp|cfm|cgi|pl|py|sh|exe)(\?|$)") OR match(lower(request_uri),"upload|fileupload|shell|cmd|webshell") | eval ext=lower(replace(request_uri,".*\.(\w+)(\?.*)?$","\1")), risk=case(match(ext,"php|asp|aspx|jsp|phar"),"CRITICAL",match(ext,"py|sh|pl|cgi|cfm"),"HIGH",true(),"MEDIUM") | stats count as upload_count, values(request_uri) as paths by client_ip, risk | eval rule_id="WS05", severity=risk, description="Web shell upload from " + client_ip | table client_ip, upload_count, paths, risk, rule_id, description

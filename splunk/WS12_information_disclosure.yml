@@ -1,26 +1,4 @@
 id: ws12-info-disclosure
 title: WS12 - Sensitive File Access / Information Disclosure Detection
-description: Detects successful access to sensitive config/credential files from nginx raw logs
 status: production
-author: aqsin1337
-date: 2026-04-18
-tags:
-  - attack.discovery
-  - attack.t1552
-severity: critical
-
-splunk_query: >
-  index=web_logs sourcetype=_json
-  | rex field=line "^(?P<src_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<method>\w+)\s+(?P<uri_path>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status>\d+)"
-  | where isnotnull(src_ip) AND status IN ("200","206")
-  | where match(lower(uri_path), "\.env|wp-config|config\.php|database\.yml|settings\.py|\.htpasswd|/etc/passwd|id_rsa|\.pem|\.key|backup\.sql|dump\.sql|\.bak|web\.config|appsettings|phpinfo|server-status|\.git/config|\.svn/entries|credentials|secrets")
-  | eval category=case(
-      match(lower(uri_path),"\.env|config|settings|appsettings|web\.config"),"Config File",
-      match(lower(uri_path),"passwd|htpasswd|credentials|id_rsa|\.pem|\.key|secrets"),"Credentials",
-      match(lower(uri_path),"\.sql|backup|dump|\.bak"),"DB Backup",
-      match(lower(uri_path),"\.git|\.svn"),"Source Code",
-      match(lower(uri_path),"phpinfo|server-status"),"System Info",
-      true(),"Sensitive File")
-  | stats count as access_count, values(uri_path) as files by src_ip, category
-  | eval rule_id="WS12", severity="CRITICAL", description="Sensitive file accessed by " + src_ip + " [" + category + "]"
-  | table src_ip, category, access_count, files, severity, rule_id, description
+splunk_query: index=web_logs sourcetype=_json | rex field=line "^(?P<client_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<http_method>\w+)\s+(?P<request_uri>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status_code>\d+)\s+(?P<bytes>\d+|-)" | where isnotnull(client_ip) AND status_code IN ("200","206") | where match(lower(request_uri),"\.env|wp-config|config\.php|database\.yml|\.htpasswd|id_rsa|\.pem|\.key|backup\.sql|dump\.sql|\.bak|web\.config|phpinfo|server-status|\.git/config|credentials|secrets") | eval category=case(match(lower(request_uri),"\.env|config|settings|web\.config"),"Config File",match(lower(request_uri),"passwd|htpasswd|credentials|id_rsa|\.pem|\.key|secrets"),"Credentials",match(lower(request_uri),"\.sql|backup|dump|\.bak"),"DB Backup",match(lower(request_uri),"\.git|\.svn"),"Source Code",match(lower(request_uri),"phpinfo|server-status"),"System Info",true(),"Sensitive File") | stats count as access_count, values(request_uri) as files by client_ip, category | eval rule_id="WS12", severity="CRITICAL", description="Sensitive file accessed by " + client_ip + " [" + category + "]" | table client_ip, category, access_count, files, severity, rule_id, description

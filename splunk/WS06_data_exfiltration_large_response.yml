@@ -1,25 +1,4 @@
 id: ws06-data-exfiltration
 title: WS06 - Potential Data Exfiltration via Large HTTP Response
-description: Detects unusually large total data transfer from a single IP using nginx raw logs
 status: production
-author: aqsin1337
-date: 2026-04-18
-tags:
-  - attack.exfiltration
-  - attack.t1048
-severity: high
-
-splunk_query: >
-  index=web_logs sourcetype=_json
-  | rex field=line "^(?P<src_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<method>\w+)\s+(?P<uri_path>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status>\d+)\s+(?P<bytes>\d+)"
-  | where isnotnull(src_ip) AND isnotnull(bytes)
-  | eval bytes=tonumber(bytes)
-  | where bytes > 0
-  | bucket _time span=10m
-  | stats sum(bytes) as total_bytes, count as req_count, max(bytes) as max_resp, values(uri_path) as paths by src_ip, _time
-  | eval total_mb=round(total_bytes/1024/1024,2)
-  | where total_mb > 50
-  | eval risk=case(total_mb>500,"CRITICAL", total_mb>200,"HIGH", true(),"MEDIUM")
-  | eval rule_id="WS06", severity=risk, description=src_ip + " downloaded " + tostring(total_mb) + " MB in 10 min"
-  | table _time, src_ip, total_mb, req_count, max_resp, risk, paths, rule_id, description
-  | sort - total_mb
+splunk_query: index=web_logs sourcetype=_json | rex field=line "^(?P<client_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<http_method>\w+)\s+(?P<request_uri>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status_code>\d+)\s+(?P<bytes>\d+)" | where isnotnull(client_ip) | eval bytes=tonumber(bytes) | where bytes > 0 | bucket _time span=10m | stats sum(bytes) as total_bytes, count as req_count, max(bytes) as max_resp, values(request_uri) as paths by client_ip, _time | eval total_mb=round(total_bytes/1024/1024,2) | where total_mb > 10 | eval risk=case(total_mb>500,"CRITICAL",total_mb>100,"HIGH",true(),"MEDIUM"), rule_id="WS06", severity=risk, description=client_ip + " downloaded " + tostring(total_mb) + " MB in 10 min" | table _time, client_ip, total_mb, req_count, max_resp, risk, paths, rule_id, description | sort - total_mb

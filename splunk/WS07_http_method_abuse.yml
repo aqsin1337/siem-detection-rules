@@ -1,21 +1,4 @@
 id: ws07-http-method-abuse
 title: WS07 - HTTP Method Abuse Detection
-description: Detects dangerous HTTP methods (PUT, DELETE, TRACE, etc.) from nginx raw logs
 status: production
-author: aqsin1337
-date: 2026-04-18
-tags:
-  - attack.initial_access
-  - attack.t1190
-severity: high
-
-splunk_query: >
-  index=web_logs sourcetype=_json
-  | rex field=line "^(?P<src_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<method>\w+)\s+(?P<uri_path>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status>\d+)"
-  | where isnotnull(src_ip)
-  | where method IN ("PUT","DELETE","TRACE","CONNECT","PROPFIND","PROPPATCH","MKCOL","COPY","MOVE","LOCK","UNLOCK")
-  | eval risk=case(method IN ("PUT","DELETE","TRACE","CONNECT"),"HIGH", true(),"MEDIUM")
-  | stats count as method_count, values(method) as methods, dc(uri_path) as unique_targets, values(uri_path) as targets by src_ip, risk
-  | where method_count > 3
-  | eval rule_id="WS07", severity=risk, description="HTTP method abuse from " + src_ip + ": " + mvjoin(methods,",")
-  | table src_ip, method_count, methods, unique_targets, targets, risk, rule_id, description
+splunk_query: index=web_logs sourcetype=_json | rex field=line "^(?P<client_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<http_method>\w+)\s+(?P<request_uri>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status_code>\d+)\s+(?P<bytes>\d+|-)" | where isnotnull(client_ip) | where http_method IN ("PUT","DELETE","TRACE","CONNECT","PROPFIND","PROPPATCH","MKCOL","COPY","MOVE","LOCK","UNLOCK") | eval risk=case(http_method IN ("PUT","DELETE","TRACE","CONNECT"),"HIGH",true(),"MEDIUM") | stats count as method_count, values(http_method) as methods, dc(request_uri) as unique_targets, values(request_uri) as targets by client_ip, risk | where method_count > 2 | eval rule_id="WS07", severity=risk, description="HTTP method abuse from " + client_ip + ": " + mvjoin(methods,",") | table client_ip, method_count, methods, unique_targets, targets, risk, rule_id, description

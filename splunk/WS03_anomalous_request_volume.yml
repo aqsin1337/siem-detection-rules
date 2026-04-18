@@ -1,23 +1,4 @@
 id: ws03-anomalous-request-volume
 title: WS03 - Anomalous Request Volume per IP Detection
-description: Detects IPs sending abnormally high request volumes using statistical baseline from nginx raw logs
 status: production
-author: aqsin1337
-date: 2026-04-18
-tags:
-  - attack.impact
-  - attack.t1499
-severity: high
-
-splunk_query: >
-  index=web_logs sourcetype=_json
-  | rex field=line "^(?P<src_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<method>\w+)\s+(?P<uri_path>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status>\d+)"
-  | where isnotnull(src_ip)
-  | bucket _time span=1m
-  | stats count as req_per_min by src_ip, _time
-  | eventstats avg(req_per_min) as avg_req, stdev(req_per_min) as stdev_req by src_ip
-  | eval threshold=avg_req+(3*stdev_req)
-  | where req_per_min > threshold AND req_per_min > 100
-  | eval anomaly_score=round((req_per_min-avg_req)/stdev_req,2)
-  | eval rule_id="WS03", severity="HIGH", description="Anomalous traffic from " + src_ip + ": " + tostring(req_per_min) + " req/min (score:" + tostring(anomaly_score) + ")"
-  | table _time, src_ip, req_per_min, avg_req, threshold, anomaly_score, severity, rule_id, description
+splunk_query: index=web_logs sourcetype=_json | rex field=line "^(?P<client_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<http_method>\w+)\s+(?P<request_uri>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status_code>\d+)\s+(?P<bytes>\d+|-)" | where isnotnull(client_ip) | bucket _time span=1m | stats count as req_per_min by client_ip, _time | eventstats avg(req_per_min) as avg_req, stdev(req_per_min) as stdev_req by client_ip | eval threshold=avg_req+(3*stdev_req) | where req_per_min > threshold AND req_per_min > 50 | eval anomaly_score=round((req_per_min-avg_req)/stdev_req,2), rule_id="WS03", severity="HIGH", description="Anomalous traffic from " + client_ip + ": " + tostring(req_per_min) + " req/min (score:" + tostring(anomaly_score) + ")" | table _time, client_ip, req_per_min, avg_req, threshold, anomaly_score, severity, rule_id, description

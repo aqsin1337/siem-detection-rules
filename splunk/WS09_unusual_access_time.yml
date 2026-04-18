@@ -1,23 +1,4 @@
 id: ws09-unusual-access-time
 title: WS09 - Unusual Off-Hours Access to Sensitive Paths
-description: Detects access to admin/config paths during off-hours (00:00-06:00) from nginx raw logs
 status: production
-author: aqsin1337
-date: 2026-04-18
-tags:
-  - attack.discovery
-  - attack.t1078
-severity: medium
-
-splunk_query: >
-  index=web_logs sourcetype=_json
-  | rex field=line "^(?P<src_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<method>\w+)\s+(?P<uri_path>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status>\d+)"
-  | where isnotnull(src_ip)
-  | eval hour=tonumber(strftime(_time,"%H"))
-  | where hour>=0 AND hour<=5
-  | where match(lower(uri_path),"admin|login|config|setup|install|backup|\.env|wp-admin|phpmyadmin|manager|console|passwd|credentials|api/v")
-  | bucket _time span=1h
-  | stats count as access_count, dc(src_ip) as unique_ips, dc(uri_path) as unique_paths, values(uri_path) as sensitive_paths, values(src_ip) as source_ips by _time, hour
-  | where access_count > 5
-  | eval rule_id="WS09", severity="MEDIUM", description="Off-hours sensitive access at " + tostring(hour) + ":00 - " + tostring(access_count) + " requests"
-  | table _time, hour, access_count, unique_ips, unique_paths, sensitive_paths, source_ips, severity, rule_id, description
+splunk_query: index=web_logs sourcetype=_json | rex field=line "^(?P<client_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<http_method>\w+)\s+(?P<request_uri>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status_code>\d+)\s+(?P<bytes>\d+|-)" | where isnotnull(client_ip) | eval hour=tonumber(strftime(_time,"%H")) | where hour>=0 AND hour<=5 | where match(lower(request_uri),"admin|login|config|setup|install|backup|\.env|wp-admin|phpmyadmin|manager|console|passwd|credentials|api/v") | bucket _time span=1h | stats count as access_count, dc(client_ip) as unique_ips, dc(request_uri) as unique_paths, values(request_uri) as sensitive_paths, values(client_ip) as source_ips by _time, hour | where access_count > 3 | eval rule_id="WS09", severity="MEDIUM", description="Off-hours access at " + tostring(hour) + ":00 - " + tostring(access_count) + " requests" | table _time, hour, access_count, unique_ips, unique_paths, sensitive_paths, source_ips, severity, rule_id, description

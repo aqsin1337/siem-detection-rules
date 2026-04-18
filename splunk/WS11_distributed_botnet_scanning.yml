@@ -1,23 +1,4 @@
 id: ws11-distributed-botnet-scan
 title: WS11 - Distributed Botnet-Style Scanning Detection
-description: Detects many unique IPs targeting same URI simultaneously, indicating coordinated botnet scanning
 status: production
-author: aqsin1337
-date: 2026-04-18
-tags:
-  - attack.reconnaissance
-  - attack.t1595
-severity: critical
-
-splunk_query: >
-  index=web_logs sourcetype=_json
-  | rex field=line "^(?P<src_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<method>\w+)\s+(?P<uri_path>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status>\d+)"
-  | where isnotnull(src_ip)
-  | bucket _time span=5m
-  | stats dc(src_ip) as unique_ips, count as total_hits, values(src_ip) as source_ips by uri_path, _time
-  | where unique_ips > 15 AND total_hits > 30
-  | eval botnet_score=round((unique_ips*total_hits)/100,2)
-  | where botnet_score > 5
-  | eval rule_id="WS11", severity="CRITICAL", description="Botnet scan on " + uri_path + " from " + tostring(unique_ips) + " IPs (score:" + tostring(botnet_score) + ")"
-  | table _time, uri_path, unique_ips, total_hits, botnet_score, source_ips, severity, rule_id, description
-  | sort - botnet_score
+splunk_query: index=web_logs sourcetype=_json | rex field=line "^(?P<client_ip>\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(?P<req_time>[^\]]+)\]\s+\"(?P<http_method>\w+)\s+(?P<request_uri>\S+)\s+HTTP/[\d\.]+\"\s+(?P<status_code>\d+)\s+(?P<bytes>\d+|-)" | where isnotnull(client_ip) | bucket _time span=5m | stats dc(client_ip) as unique_ips, count as total_hits, values(client_ip) as source_ips by request_uri, _time | where unique_ips > 5 AND total_hits > 10 | eval botnet_score=round((unique_ips*total_hits)/50,2) | where botnet_score > 2 | eval rule_id="WS11", severity="CRITICAL", description="Botnet scan on " + request_uri + " from " + tostring(unique_ips) + " IPs (score:" + tostring(botnet_score) + ")" | table _time, request_uri, unique_ips, total_hits, botnet_score, source_ips, severity, rule_id, description | sort - botnet_score
